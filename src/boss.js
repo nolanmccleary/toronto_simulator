@@ -5,14 +5,15 @@ import { PLAYER } from './config.js';
 
 // One unique bossman per level. Each looks and fights unlike anything else.
 const DEFS = {
-  orbital:   { name: 'THE EYE OF DUNDAS', color: 0xff3df0, hp: 820,  hitR: 3.0, touch: 16 },
-  hunter:    { name: 'THE STREAK',        color: 0xffcf3d, hp: 680,  hitR: 2.4, touch: 10 },
-  hive:      { name: 'THE HIVE',          color: 0x3dff9e, hp: 940,  hitR: 3.0, touch: 16 },
-  monolith:  { name: 'THE MEGALITH',      color: 0x7d5cff, hp: 1320, hitR: 3.4, touch: 18 },
-  aegis:     { name: 'THE AEGIS',         color: 0x6affd8, hp: 820,  hitR: 3.0, touch: 16, shield: 720 },
-  streetcar: { name: 'THE RED ROCKET',    color: 0xe8463a, hp: 1500, hitR: 3.6, touch: 26 },
-  tesla:     { name: 'THE OVERCHARGE',    color: 0x5ad6ff, hp: 1000, hitR: 2.8, touch: 14 },
+  orbital:   { name: 'THE EYE OF DUNDAS', color: 0xff3df0, hp: 480, hitR: 3.0, touch: 16 },
+  hunter:    { name: 'THE STREAK',        color: 0xffcf3d, hp: 400, hitR: 2.4, touch: 10 },
+  hive:      { name: 'THE HIVE',          color: 0x3dff9e, hp: 540, hitR: 3.0, touch: 16 },
+  monolith:  { name: 'THE MEGALITH',      color: 0x7d5cff, hp: 760, hitR: 3.4, touch: 18 },
+  aegis:     { name: 'THE AEGIS',         color: 0x6affd8, hp: 480, hitR: 3.0, touch: 16, shield: 420 },
+  streetcar: { name: 'THE RED ROCKET',    color: 0xe8463a, hp: 880, hitR: 3.6, touch: 26 },
+  tesla:     { name: 'THE OVERCHARGE',    color: 0x5ad6ff, hp: 600, hitR: 2.8, touch: 14 },
 };
+const HP_SCALE = 0.1; // per-wave boss HP growth
 const ORDER = ['orbital', 'hunter', 'hive', 'monolith', 'aegis', 'streetcar', 'tesla'];
 export function bossTypeForWave(wave) { return ORDER[((((wave - 1) % ORDER.length) + ORDER.length) % ORDER.length)]; }
 
@@ -24,9 +25,9 @@ export class Boss {
   constructor(scene, glowTex, type, wave, player) {
     const d = DEFS[type];
     this.type = type; this.name = d.name; this.color = d.color; this.hitR = d.hitR; this.touch = d.touch;
-    this.maxHp = Math.round(d.hp * (1 + 0.16 * (wave - 1)));
+    this.maxHp = Math.round(d.hp * (1 + HP_SCALE * (wave - 1)));
     this.hp = this.maxHp;
-    this.shieldMax = Math.round((d.shield || 0) * (1 + 0.16 * (wave - 1)));
+    this.shieldMax = Math.round((d.shield || 0) * (1 + HP_SCALE * (wave - 1)));
     this.shield = this.shieldMax;
     this.hitClock = 0;
     this.scene = scene; this.glowTex = glowTex;

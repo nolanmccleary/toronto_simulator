@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { PLAYER, GRAPPLE } from './config.js';
+import { PLAYER, GRAPPLE, JET } from './config.js';
 
 const EPS = 0.001;
 const _contact = new THREE.Vector3();
@@ -34,8 +34,13 @@ export class Player {
     this.health = PLAYER.maxHealth;
     this.alive = true;
     this.hardcore = this.hardcore || false;
-    this.invuln = false;      // Pressa/Drizzy: take no damage
-    this.speedMul = 1;        // Pressa/Drizzy: 2x speed
+    this.invuln = false;      // console-invoked power modes: true (infinite)
+    this.auxHp = 0;           // package power modes: damage hits this first, then reverts
+    this.speedMul = 1;        // ground run multiplier
+    this.flySpeedMul = 1;     // jetpack flight multiplier
+    this.jetpackEnabled = false;
+    this.flying = false;
+    this.fuel = JET.fuelMax;
     this._hurtCooldown = 0;
 
     // jump feel
@@ -86,6 +91,7 @@ export class Player {
 
   takeDamage(amount) {
     if (!this.alive || this.invuln) return;
+    if (this.auxHp > 0) { this.auxHp = Math.max(0, this.auxHp - amount); return; } // aux shield absorbs
     this.health = this.hardcore ? 0 : Math.max(0, this.health - amount);
     if (this.health <= 0) this.alive = false;
   }
@@ -132,29 +138,45 @@ export class Player {
         ev.jumped = true;
       }
     } else {
-      const target = wish.multiplyScalar(PLAYER.walkSpeed * this.speedMul);
+      const mul = this.flying ? this.flySpeedMul : this.speedMul;
+      const target = wish.multiplyScalar(PLAYER.walkSpeed * mul);
+      // Flying forward adds extra boost.
+      if (this.flying && m.z > 0) target.addScaledVector(this._fwd, PLAYER.walkSpeed * 0.7);
       if (this.grounded) {
         const a = PLAYER.accel * dt;
         this.vel.x = approach(this.vel.x, target.x, a);
         this.vel.z = approach(this.vel.z, target.z, a);
-      } else if (hasInput) {
-        // Air: steer toward wish but never brake with no input — preserves fling momentum.
-        const a = PLAYER.airAccel * dt;
+      } else if (hasInput || this.flying) {
+        const a = (this.flying ? PLAYER.accel : PLAYER.airAccel) * dt;
         this.vel.x = approach(this.vel.x, target.x, a);
         this.vel.z = approach(this.vel.z, target.z, a);
       }
       if (!this.grapple.active) this.vel.y -= PLAYER.gravity * dt; // zipline cuts gravity
 
       const canJump = this.grounded || this.coyote > 0;
-      if (this.jumpBuf > 0 && canJump) {
+      if (this.jetpackEnabled && pressEdge && !this.grounded && !this.flying && this.fuel > 0) {
+        this.flying = true; // double-jump (airborne press) engages the jetpack — takes priority over coyote
+      } else if (this.jumpBuf > 0 && canJump) {
         this.vel.y = PLAYER.jumpSpeed;
         this.grounded = false; this.coyote = 0; this.jumpBuf = 0;
         this._jumpActive = true; this._cut = false;
         ev.jumped = true;
       }
-      if (this._jumpActive && !spaceDown && !this._cut && this.vel.y > 0) {
+      if (!this.flying && this._jumpActive && !spaceDown && !this._cut && this.vel.y > 0) {
         this.vel.y *= PLAYER.jumpCut; this._cut = true;
       }
+
+      // --- Jetpack ---
+      if (this.flying) {
+        if (spaceDown && this.fuel > 0) {
+          this.vel.y += JET.thrust * dt;
+          if (this.vel.y > JET.maxRise) this.vel.y = JET.maxRise;
+          this.fuel = Math.max(0, this.fuel - JET.drain * dt);
+          ev.thrusting = true;
+        }
+        if (this.grounded || (this.fuel <= 0 && !spaceDown)) this.flying = false;
+      }
+      if (this.grounded) { this.flying = false; this.fuel = Math.min(JET.fuelMax, this.fuel + JET.refill * dt); }
     }
 
     // --- Grapple / zipline: hard committal yank toward the anchor ---

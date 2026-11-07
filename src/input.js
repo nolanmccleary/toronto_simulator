@@ -13,8 +13,9 @@ export class Input {
     this._onLock = null;    // optional callback(locked:boolean)
 
     addEventListener('keydown', (e) => {
-      // Don't trap browser shortcuts (Cmd/Ctrl combos).
+      // Don't trap browser shortcuts (Cmd/Ctrl combos) or typing in a text field.
       if (e.metaKey || e.ctrlKey) return;
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       this.keys.add(e.code);
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });

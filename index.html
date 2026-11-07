@@ -34,10 +34,14 @@
       <div id="boss-bar"><div id="boss-fill"></div></div>
     </div>
 
-    <div id="charge-wrap">
-      <div id="charge-label"></div>
-      <div id="charge-bar"><div id="charge-fill"></div></div>
+    <div id="power-wrap">
+      <div id="power-label"></div>
+      <div id="power-bar"><div id="power-fill"></div></div>
+      <div id="fuel-wrap"><span class="fuel-cap">JET</span><div id="fuel-bar"><div id="fuel-fill"></div></div></div>
     </div>
+
+    <div id="prompt"></div>
+    <div id="somali-text">والله يا أخي</div>
 
     <div id="top-left">
       <div class="stat"><label>WAVE</label><b id="wave">0</b></div>
@@ -76,7 +80,9 @@
         <span><b class="port">Slider</b> — <kbd>L-CLICK</kbd> orange &nbsp; <kbd>R-CLICK</kbd> blue, then dash through</span>
         <span><b class="draco">Draco</b> — sniper: slow, semi-auto, big damage &nbsp;·&nbsp; <kbd>R-CLICK</kbd> scope to aim</span>
         <span>hold <kbd>W</kbd> into any structure to climb &nbsp;·&nbsp; <em>amber pad</em> to launch</span>
-        <span>avoid the <b class="danger-text">red spikes</b></span>
+        <span>avoid the <b class="danger-text">red spikes</b> &nbsp;·&nbsp; grab <b style="color:#5effb0">health orbs</b></span>
+        <span>stand on a <b style="color:#ffd166">power-up package</b> and press <kbd>6</kbd> for a mode</span>
+        <span><kbd>/</kbd> console: type a mode to run it (tap <kbd>K</kbd> ×6 to exit)</span>
         <span><kbd>ESC</kbd> pause &nbsp;·&nbsp; <kbd>M</kbd> mute</span>
       </div>
       <button id="hardcore-toggle"><span class="box"></span> TORONTOMANS MODE — one hit, you're done</button>
@@ -89,6 +95,15 @@
       <h1 class="danger">DOWNED</h1>
       <p>you reached wave <b id="final-wave">0</b> &nbsp;·&nbsp; <b id="final-score">0</b> eliminated</p>
       <p class="sub">click to play again</p>
+    </div>
+  </div>
+
+  <!-- Mode console -->
+  <div id="console">
+    <div class="console-panel">
+      <div class="console-prompt">&gt; invoke mode</div>
+      <input id="console-input" type="text" autocomplete="off" spellcheck="false" placeholder="somali samurai  /  night yute" />
+      <div class="console-hint">ENTER to run (infinite) · ESC to cancel</div>
     </div>
   </div>
 

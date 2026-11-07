@@ -110,19 +110,19 @@ export const ARENA = {
 
 export const WAVES = {
   baseCount: 4,
-  perWave: 2,
-  spawnInterval: 0.55,     // seconds between spawns within a wave
+  perWave: 1,              // gentler ramp in enemy count
+  spawnInterval: 0.6,      // seconds between spawns within a wave
   intermission: 2.5,       // seconds between waves
   firstIntermission: 1.4,  // quicker start to the first round
-  difficultyOffset: 3,     // round 1 plays like the old wave 4
+  difficultyOffset: 2,     // round 1 plays like the old wave 3
 };
 
 // Shared enemy tuning + gentle per-wave scaling applied on top of each type.
 export const ENEMY = {
   contactInterval: 0.7,            // how often a touching enemy can hurt you
-  hpScalePerWave: 0.12,            // +12% HP per wave
-  speedScalePerWave: 0.035,        // +3.5% speed per wave
-  speedScaleCap: 1.7,
+  hpScalePerWave: 0.09,            // +9% HP per wave
+  speedScalePerWave: 0.03,         // +3% speed per wave
+  speedScaleCap: 1.6,
 };
 
 // Enemy roster. `behavior` drives the AI; everything else is cosmetic/stats.
@@ -131,14 +131,14 @@ export const ENEMY = {
 //   teleport — chase, but blink around to stay unpredictable
 export const ENEMY_TYPES = {
   grunt:   { color: 0xff5d73, shape: 'octahedron',  radius: 0.75, hp: 60,  speed: 2.6, damage: 9,  behavior: 'melee' },
-  runner:  { color: 0xff3d9a, shape: 'tetrahedron', radius: 0.55, hp: 32,  speed: 5.8, damage: 7,  behavior: 'melee' },
+  runner:  { color: 0xff3d9a, shape: 'tetrahedron', radius: 0.55, hp: 32,  speed: 5.8, damage: 7,  behavior: 'melee', climber: false },
   brute:   { color: 0xff8c42, shape: 'box',         radius: 1.15, hp: 165, speed: 1.7, damage: 22, behavior: 'melee' },
   shooter: { color: 0xb47dff, shape: 'icosahedron', radius: 0.8,  hp: 70,  speed: 2.2, damage: 0,  behavior: 'ranged',
              standoff: 17, shootInterval: 2.1, projSpeed: 15, projDamage: 12 },
   blinker: { color: 0x6cb0ff, shape: 'octahedron',  radius: 0.68, hp: 50,  speed: 3.1, damage: 11, behavior: 'teleport',
              blinkInterval: 2.6, blinkRange: 11 },
   // --- the wider ecosystem ---
-  swarm:   { color: 0xbdff5a, shape: 'tetrahedron', radius: 0.42, hp: 15,  speed: 6.7, damage: 5,  behavior: 'swarm' },      // weak, fast, in packs
+  swarm:   { color: 0xbdff5a, shape: 'tetrahedron', radius: 0.42, hp: 15,  speed: 6.7, damage: 5,  behavior: 'swarm', climber: false }, // weak, fast, in packs
   bomber:  { color: 0xff6a1f, shape: 'octahedron',  radius: 0.72, hp: 42,  speed: 5.4, damage: 0,  behavior: 'bomber' },     // rushes + detonates
   warden:  { color: 0x6affd8, shape: 'icosahedron', radius: 0.95, hp: 140, speed: 1.6, damage: 10, behavior: 'warden' },     // shields nearby allies
   mortar:  { color: 0xb45cff, shape: 'cone',        radius: 0.85, hp: 72,  speed: 1.9, damage: 0,  behavior: 'mortar', standoff: 30 }, // lobs AoE strikes
@@ -155,10 +155,20 @@ export const PULSAR = { interval: 2.8, radius: 6, damage: 22 };
 // Health orbs: spawn/despawn around the arena; walk over one to heal.
 export const PICKUP = { heal: 25, radius: 1.9, interval: 7, intervalVar: 5, maxActive: 3, life: 15, color: 0x5effb0 };
 
-// Drizzy-mode arsenal: left = gatling, right = lock-on guided missiles.
+// Power modes: Somali Samurai (sabre) and XM01-Night Yute (Gat + missiles + jetpack).
+// Both grant 30 auxiliary HP when picked up as a package; invoked from the /console they're infinite.
+export const POWER = {
+  auxHp: 30,
+  somaliSpeed: 2.0,         // ground run multiplier
+  nightGroundSpeed: 1.0,    // Night Yute runs at normal speed on the ground...
+  nightFlySpeed: 2.2,       // ...and is fast while flying the jetpack
+};
+export const JET = { fuelMax: 2.4, thrust: 34, maxRise: 10, drain: 1.0, refill: 0.75 };
+
+// Night Yute arsenal: left = Gat, right = lock-on guided missiles.
 export const GATLING = { cooldown: 0.055, damage: 15, range: 220, spread: 0.012, color: 0xffe08a };
 export const MISSILE = {
-  lockTime: 1.35,   // slower to lock (and thus slower cadence)
+  lockTime: 1.05,   // slower to lock (and thus slower cadence)
   speed: 34,
   turn: 4.5,        // limited turn radius → it arcs, can't snap
   loft: 4.5,        // aims this far above the target when far, so it flies over cover

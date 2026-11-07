@@ -293,6 +293,20 @@ export class Enemies {
     }
   }
 
+  // Circle-vs-AABB push-out so grounded non-climbers can't enter or scale structures.
+  _blockStructures(e) {
+    const r = e.radius;
+    for (const c of this.world.colliders) {
+      if (c.boundary || c.max.y <= e.hover - 0.1) continue;
+      const cx = Math.max(c.min.x, Math.min(e.pos.x, c.max.x));
+      const cz = Math.max(c.min.z, Math.min(e.pos.z, c.max.z));
+      const dx = e.pos.x - cx, dz = e.pos.z - cz;
+      const d = Math.hypot(dx, dz);
+      if (d < r && d > 1e-4) { e.pos.x = cx + (dx / d) * r; e.pos.z = cz + (dz / d) * r; }
+      else if (d <= 1e-4) { e.pos.x = c.max.x + r; }
+    }
+  }
+
   // Bomber detonation — AoE that hurts the player and can chain even on a close kill.
   _detonateBomber(e, player, byPlayer) {
     this.effects.flash(e.pos.clone(), e.color, 11, 0.45);
@@ -432,9 +446,16 @@ export class Enemies {
     e.pos.x = Math.max(-lim, Math.min(lim, e.pos.x));
     e.pos.z = Math.max(-lim, Math.min(lim, e.pos.z));
 
-    // Climb: ride the terrain height under us toward the player's elevation.
+    // Movement up/down: climbers ride terrain; non-climbers stay grounded and are
+    // blocked by building footprints (runners/swarms can't scale structures).
     e.bob += dt;
-    const targetY = this.world.terrainHeight(e.pos.x, e.pos.z) + e.hover;
+    let targetY;
+    if (e.def.climber === false) {
+      this._blockStructures(e);
+      targetY = e.hover;
+    } else {
+      targetY = this.world.terrainHeight(e.pos.x, e.pos.z) + e.hover;
+    }
     const dy = targetY - e.pos.y;
     e.pos.y += Math.sign(dy) * Math.min(Math.abs(dy), ENEMY_CLIMB * dt);
     e.group.position.set(e.pos.x, e.pos.y + Math.sin(e.bob * 3) * 0.14, e.pos.z);

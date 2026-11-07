@@ -21,8 +21,6 @@ export class HUD {
     this.portalB = this.$('portal-b');
     this.modeTag = this.$('mode-tag');
     this.scope = this.$('scope');
-    this.chargeFill = this.$('charge-fill');
-    this.chargeLabel = this.$('charge-label');
     this.seered = this.$('seered');
     this.jethud = this.$('jethud');
     this.jetHdg = this.$('jet-hdg');
@@ -36,38 +34,60 @@ export class HUD {
     this.lock = this.$('lock');
     this.lockFill = this.$('lock-fill');
     this.lockText = this.$('lock-text');
+    this.powerWrap = this.$('power-wrap');
+    this.powerLabel = this.$('power-label');
+    this.powerFill = this.$('power-fill');
+    this.fuelWrap = this.$('fuel-wrap');
+    this.fuelFill = this.$('fuel-fill');
+    this.somaliText = this.$('somali-text');
+    this.prompt = this.$('prompt');
+    this.consoleEl = this.$('console');
+    this.consoleInput = this.$('console-input');
     this._pool = [];
     this._weapon = 'strap';
     this._bannerTimer = 0;
   }
 
-  setCharge(frac, power) {
-    this.chargeFill.style.width = Math.max(0, Math.min(1, frac)) * 100 + '%';
-    const full = frac >= 1;
-    this.chargeFill.classList.toggle('full', full && !power);
-    this.chargeFill.classList.toggle('power', !!power);
-    if (power === 'pressa') this.chargeLabel.textContent = 'PRESSA MODE ENGAGED';
-    else if (power === 'drizzy') this.chargeLabel.textContent = 'DRIZZY MODE';
-    else if (full) this.chargeLabel.textContent = 'PRESSA MODE READY  —  PRESS 6';
-    else this.chargeLabel.textContent = '';
+  // Aux-HP + jetpack-fuel gauges during a power mode. fuelFrac < 0 = no jetpack.
+  setPowerStatus(power, aux, auxMax, fuelFrac) {
+    if (!power) { this.powerWrap.style.display = 'none'; this.fuelWrap.style.display = 'none'; return; }
+    this.powerWrap.style.display = 'block';
+    const inf = !isFinite(aux);
+    this.powerFill.style.width = (inf ? 1 : Math.max(0, Math.min(1, aux / auxMax))) * 100 + '%';
+    // Night Yute's name is already shown in the jet status line — don't repeat it here.
+    const aux_s = 'AUX ' + (inf ? '∞' : Math.ceil(aux));
+    this.powerLabel.textContent = power === 'somali' ? 'SOMALI SAMURAI · ' + aux_s : aux_s;
+    this.fuelWrap.style.display = fuelFrac >= 0 ? 'block' : 'none';
+    if (fuelFrac >= 0) this.fuelFill.style.width = Math.max(0, Math.min(1, fuelFrac)) * 100 + '%';
   }
 
   setPowerMode(kind) {
-    // kind: null | 'pressa' | 'drizzy'
-    this.seered.style.display = kind ? 'block' : 'none';
-    this.seered.classList.toggle('drizzy', kind === 'drizzy');
-    this.jethud.style.display = kind ? 'block' : 'none';
-    this.targets.style.display = kind ? 'block' : 'none';
+    // kind: null | 'somali' | 'nightyute'
+    const night = kind === 'nightyute';
+    this.seered.style.display = kind ? 'block' : 'none';   // both modes "see red"
+    this.jethud.style.display = night ? 'block' : 'none';  // only Night Yute keeps the jet HUD
+    this.targets.style.display = night ? 'block' : 'none';
+    this.somaliText.style.display = kind === 'somali' ? 'flex' : 'none';
     if (kind) {
-      const drizzy = kind === 'drizzy';
-      this.weaponName.textContent = drizzy ? 'DRIZZY ARSENAL' : 'SAUGA SABRE';
+      this.weaponName.textContent = night ? 'XM01-NIGHT YUTE' : 'SAUGA SABRE';
       this.portalDots.style.display = 'none';
       this.crosshair.style.display = 'none';
-      this.jetStatus.textContent = drizzy ? '● DRIZZY · GATLING + MISSILES' : '● PRESSA · WPN SABRE · GUNS GUNS GUNS';
+      if (night) this.jetStatus.textContent = '● NIGHT YUTE · GAT + MISSILES';
     } else {
       this.updateTargets([]);
       this.lock.style.display = 'none';
     }
+  }
+
+  showPrompt(mode) {
+    if (!mode) { this.prompt.style.display = 'none'; return; }
+    this.prompt.style.display = 'block';
+    this.prompt.innerHTML = 'PRESS <b>6</b> — ' + (mode === 'somali' ? 'SOMALI SAMURAI' : 'XM01-NIGHT YUTE');
+  }
+
+  showConsole(on) {
+    this.consoleEl.style.display = on ? 'flex' : 'none';
+    if (on) { this.consoleInput.value = ''; setTimeout(() => this.consoleInput.focus(), 0); }
   }
 
   setJetReadouts(hdg, spd, alt) {

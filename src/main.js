@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, GATLING, MISSILE, PLAYER } from './config.js';
+import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, GATLING, MISSILE, POWER, JET, PLAYER } from './config.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemies } from './enemies.js';
@@ -7,6 +7,7 @@ import { Effects, glowSprite } from './effects.js';
 import { Portals } from './portals.js';
 import { Hazards } from './hazards.js';
 import { Pickups } from './pickups.js';
+import { Powerups } from './powerups.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
 import { raycastWorld } from './raycast.js';
@@ -28,9 +29,11 @@ const enemies = new Enemies(scene, effects);
 const portals = new Portals(scene, effects);
 const hazards = new Hazards(scene, effects);
 const pickups = new Pickups(scene, effects);
+const powerups = new Powerups(scene, effects);
 enemies.bind(world);
 hazards.bind(world);
 pickups.bind(world);
+powerups.bind(world);
 player.portals = portals;
 const input = new Input(renderer.domElement);
 const hud = new HUD();
@@ -38,7 +41,7 @@ const hud = new HUD();
 enemies.onWaveStart = (n) => { world.regenerate(player.pos); portals.reset(); player.releaseGrapple(); hud.showBanner('WAVE ' + n); };
 enemies.onPlayerHurt = () => hud.flashDamage();
 enemies.onBoss = (name) => { hud.showBanner('⚠ BOSSMAN ALERT', 2.6); sfx.over(); };
-enemies.onKill = (pos) => { if (power) wasted.push({ pos: pos.clone(), t: 0 }); }; // "WASTED" marker in power modes
+enemies.onKill = (pos) => { if (power === 'nightyute') wasted.push({ pos: pos.clone(), t: 0 }); }; // "WASTED" marker (Night Yute HUD only)
 hazards.onPlayerHurt = () => hud.flashDamage();
 
 let state = 'menu';       // menu | playing | paused | dead
@@ -51,17 +54,15 @@ let hardcore = false;     // Torontomans one-hit-death
 let clock = performance.now();
 let worldTime = 0;
 
-// --- Pressa / Drizzy power mode ---
-const CHARGE_PASSIVE = 1 / 55;   // passive bar fill (seconds to full ~55)
-const CHARGE_PER_HP = 0.0009;    // kills fill faster; tougher enemies fill most
-const PRESSA_DRAIN = 1 / 9;      // Pressa lasts ~9s once engaged
+// --- Power modes: Somali Samurai + XM01-Night Yute ---
 const KATANA_REACH = 8.5;
 const KATANA_CD = 0.3;
-let charge = 0;
-let power = null;                // null | 'pressa' | 'drizzy'
-let powerHealthSnapshot = 100;
+let power = null;                // null | 'somali' | 'nightyute'
+let powerPermanent = false;      // invoked from /console → infinite + indefinite
+let powerSnapshot = 100;         // health to restore on revert
 let swingCd = 0;
-let kTaps = 0, kTapTimer = 0;    // secret Drizzy K-sequence
+let kTaps = 0, kTapTimer = 0;    // 6 K-taps to tap out of a /console-invoked mode
+let consoleOpen = false;
 const wasted = [];               // transient "WASTED" markers {pos, t}
 const _proj = new THREE.Vector3();
 
@@ -196,38 +197,45 @@ function tryGrapple() {
   }
 }
 
-// --- Pressa / Drizzy ---
-function engagePower(kind) {
-  power = kind;
-  powerHealthSnapshot = player.health;
-  player.invuln = true; player.speedMul = 2;
+// --- Power modes ---
+// permanent (from /console) = infinite HP + indefinite; otherwise aux-HP package mode.
+function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
+  if (power) return;
+  power = kind; powerPermanent = permanent; powerSnapshot = player.health;
+  player.invuln = permanent;                 // console = infinite; package = aux shield
+  player.auxHp = permanent ? 0 : aux;
   player.scopeFov = null;
-  katana.visible = (kind === 'pressa');
-  gatling.visible = (kind === 'drizzy');
+  if (kind === 'somali') {
+    player.speedMul = POWER.somaliSpeed; player.flySpeedMul = POWER.somaliSpeed; player.jetpackEnabled = false;
+  } else {
+    player.speedMul = POWER.nightGroundSpeed; player.flySpeedMul = POWER.nightFlySpeed;
+    player.jetpackEnabled = true; player.fuel = JET.fuelMax;
+  }
+  katana.visible = (kind === 'somali');
+  gatling.visible = (kind === 'nightyute');
   hud.setPowerMode(kind);
-  hud.showBanner(kind === 'drizzy' ? 'DRIZZY MODE ACTIVATED' : 'PRESSA MODE ENGAGED', 2.2);
-  if (kind === 'pressa') charge = 1;
+  hud.showBanner(kind === 'somali' ? 'SOMALI MODE ACTIVATED' : 'XM01-NIGHT YUTE', 2.4);
   sfx.wave();
 }
 function disengagePower() {
-  const wasPressa = power === 'pressa';
-  power = null;
-  player.invuln = false; player.speedMul = 1;
-  katana.visible = false; katanaState.swinging = false;
+  if (!power) return;
+  power = null; powerPermanent = false;
+  player.invuln = false; player.auxHp = 0;
+  player.speedMul = 1; player.flySpeedMul = 1; player.jetpackEnabled = false; player.flying = false;
+  katana.visible = false; gatling.visible = false; katanaState.swinging = false;
   clearDrizzy();
-  if (wasPressa) player.health = Math.min(PLAYER.maxHealth, powerHealthSnapshot);
-  charge = 0;
-  wasted.length = 0;
+  player.health = Math.min(PLAYER.maxHealth, powerSnapshot); // save as before
+  wasted.length = 0; kTaps = 0;
   hud.setPowerMode(null);
   hud.setWeapon(WEAPONS[weapon]);
-  hud.setCharge(0, null);
 }
 function resetPower() {
-  power = null; charge = 0; swingCd = 0; kTaps = 0; wasted.length = 0;
-  player.invuln = false; player.speedMul = 1;
-  katana.visible = false; katanaState.swinging = false;
+  power = null; powerPermanent = false; swingCd = 0; kTaps = 0; wasted.length = 0;
+  player.invuln = false; player.auxHp = 0; player.speedMul = 1; player.flySpeedMul = 1;
+  player.jetpackEnabled = false; player.flying = false;
+  katana.visible = false; gatling.visible = false; katanaState.swinging = false;
   clearDrizzy();
-  hud.setPowerMode(null); hud.setCharge(0, null);
+  hud.setPowerMode(null);
 }
 
 function animateKatana(dt) {
@@ -247,34 +255,33 @@ function animateKatana(dt) {
 }
 
 function powerUpdate(dt) {
-  if (power === 'pressa') { charge -= PRESSA_DRAIN * dt; if (charge <= 0) { disengagePower(); return; } }
-  if (power === 'pressa') pressaWeapons(dt);
-  else drizzyWeapons(dt);
+  if (power === 'somali') somaliWeapons(dt);
+  else nightyuteWeapons(dt);
   for (let i = wasted.length - 1; i >= 0; i--) { wasted[i].t += dt; if (wasted[i].t > 0.6) wasted.splice(i, 1); }
 }
 
-// Pressa: Sauga Sabre (left) + zipline (right).
-function pressaWeapons(dt) {
+// Somali Samurai: Sauga Sabre only (no zipline, no HUD).
+function somaliWeapons(dt) {
   swingCd -= dt;
   if (input.firing && swingCd <= 0) {
     swingCd = KATANA_CD;
     katanaState.swinging = true; katanaState.t = 0;
-    enemies.katanaSweep(player, KATANA_REACH); // kills flagged via enemies.onKill → WASTED markers
+    enemies.katanaSweep(player, KATANA_REACH);
     sfx.slice();
   }
-  tryGrapple();
   animateKatana(dt);
 }
 
-// Drizzy: gatling cannon (left) + lock-on guided missiles (right).
-function drizzyWeapons(dt) {
+// Night Yute: Gat (left) + lock-on guided missiles (right) — never both at once.
+function nightyuteWeapons(dt) {
   gatlingCd -= dt;
-  const firingGat = input.firing;
+  const locking = input.firing2;               // right-click = missiles
+  const firingGat = input.firing && !locking;  // can't Gat while locking missiles
   if (firingGat && gatlingCd <= 0) { gatlingCd = GATLING.cooldown; fireGatling(); }
   gatSpin += dt * (firingGat ? 24 : 3);
   gatBarrels.rotation.z = gatSpin;
 
-  if (input.firing2) {
+  if (locking) {
     const tgt = enemies.lockTarget(player.getRay(), MISSILE.lockCone);
     if (tgt && tgt === lockTarget) {
       const was = lockProgress;
@@ -395,12 +402,13 @@ function beginPlay() {
   enemies.reset();
   hazards.reset();
   pickups.reset();
+  powerups.reset();
   weaponCd = 0;
   resetPower();
   setWeapon(0);
   hud.setHealth(player.health, PLAYER.maxHealth);
   hud.hideBoss();
-  hud.setCharge(0, null);
+  hud.showPrompt(null);
   hud.showStart(false);
   hud.showGameOver(false);
   hud.showBanner('GET READY', 2.0);
@@ -419,7 +427,7 @@ input.onLockChange((locked) => {
   if (locked) {
     if (state === 'paused') { state = 'playing'; hud.showStart(false); }
     else if (state === 'menu' || state === 'dead') { beginPlay(); }
-  } else if (state === 'playing' && player.alive) {
+  } else if (state === 'playing' && player.alive && !consoleOpen) {
     state = 'paused';
     hud.setStartMode('paused');
     hud.showStart(true);
@@ -444,24 +452,54 @@ hc.addEventListener('click', (e) => {
 });
 
 addEventListener('keydown', (e) => {
+  if (consoleOpen) return; // the console input handles its own keys
   if (e.code === 'KeyM') { const m = toggleMute(); hud.showBanner(m ? 'MUTED' : 'SOUND ON', 0.9); }
   if (state !== 'playing') return;
 
-  // Secret Drizzy code: six distinct K presses to enter, seven to leave.
+  // "/" opens the mode console (pauses the game).
+  if (e.code === 'Slash') { e.preventDefault(); openConsole(); return; }
+
+  // Tap out of a /console-invoked (indefinite) mode with six K presses.
   if (e.code === 'KeyK' && !e.repeat) {
     kTaps += 1; kTapTimer = 1.3;
-    if (!power && kTaps >= 6) { kTaps = 0; engagePower('drizzy'); }
-    else if (power === 'drizzy' && kTaps >= 7) { kTaps = 0; disengagePower(); }
+    if (power && powerPermanent && kTaps >= 6) { kTaps = 0; disengagePower(); }
     return;
   }
 
-  // Pressa: engage when the bar is full.
-  if (e.code === 'Digit6' && !power && charge >= 1) { engagePower('pressa'); return; }
+  // "6" activates the power-up package you're standing near.
+  if (e.code === 'Digit6' && !power) {
+    const mode = powerups.nearMode(player);
+    if (mode) { powerups.consume(); engagePower(mode, { permanent: false, aux: POWER.auxHp }); }
+    return;
+  }
 
   if (power) return; // weapon switching disabled during power modes
   if (e.code === 'Digit1') setWeapon(0);
   if (e.code === 'Digit2') setWeapon(1);
   if (e.code === 'Digit3') setWeapon(2);
+});
+
+// --- Mode console ("/") — pauses the game; type a mode to invoke it indefinitely ---
+function openConsole() { consoleOpen = true; input.exitLock(); hud.showConsole(true); }
+function closeConsole() { consoleOpen = false; hud.showConsole(false); }
+function parseMode(s) {
+  s = (s || '').toLowerCase();
+  if (/somali|samurai|wallahi/.test(s)) return 'somali';
+  if (/yute|drizzy|xm01|night/.test(s)) return 'nightyute';
+  return null;
+}
+const consoleInput = document.getElementById('console-input');
+consoleInput.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.code === 'Enter') {
+    const mode = parseMode(consoleInput.value);
+    consoleInput.value = ''; closeConsole();
+    if (mode) engagePower(mode, { permanent: true });
+    state = 'paused'; hud.setStartMode('paused'); hud.showStart(true); // pointer-lock lost → resume overlay
+  } else if (e.code === 'Escape') {
+    consoleInput.value = ''; closeConsole();
+    state = 'paused'; hud.setStartMode('paused'); hud.showStart(true);
+  }
 });
 
 addEventListener('resize', () => {
@@ -479,16 +517,14 @@ function loop() {
   if (dt > 0.05) dt = 0.05;
   worldTime += dt;
 
-  if (state === 'playing') {
+  if (state === 'playing' && !consoleOpen) {
     weaponCd -= dt; grappleCd -= dt;
     if (kTapTimer > 0) { kTapTimer -= dt; if (kTapTimer <= 0) kTaps = 0; }
-
-    // Pressa bar charges from time + kills (tougher enemies fill it most).
-    const kc = enemies.pendingCharge; enemies.pendingCharge = 0;
-    if (!power) charge = Math.min(1, charge + CHARGE_PASSIVE * dt + kc * CHARGE_PER_HP);
+    enemies.pendingCharge = 0; // (charge system removed; keep the accumulator clear)
 
     if (power) {
       powerUpdate(dt);
+      hud.showPrompt(null);
     } else {
       const w = input.consumeWheel();
       switchCd -= dt;
@@ -524,8 +560,13 @@ function loop() {
     portals.update(dt);
     hazards.update(dt, player, enemies.wave, enemies.state === 'active', portals, enemies);
     pickups.update(dt, player, true);
+    powerups.update(dt, player, !power); // only offer a package when not already powered up
+    hud.showPrompt(power ? null : powerups.nearMode(player));
 
-    if (power) updateJetHud();
+    // Aux-HP package modes revert (restoring health) once the shield is spent.
+    if (power && !powerPermanent && player.auxHp <= 0) disengagePower();
+
+    if (power === 'nightyute') updateJetHud();
     if (enemies.bossAlive) {
       const bss = enemies.boss;
       hud.setBoss(bss.name, (bss.hp + (bss.shield || 0)) / (bss.maxHp + (bss.shieldMax || 0)));
@@ -534,7 +575,7 @@ function loop() {
     hud.setHealth(player.health, PLAYER.maxHealth);
     hud.setStats(enemies.wave, enemies.score, enemies.remaining);
     hud.setPortalStatus(!power && WEAPONS[weapon] === 'slider', portals.a.active, portals.b.active);
-    hud.setCharge(power === 'drizzy' ? 1 : charge, power);
+    hud.setPowerStatus(power, powerPermanent ? Infinity : player.auxHp, POWER.auxHp, player.jetpackEnabled ? player.fuel / JET.fuelMax : -1);
 
     if (!player.alive) gameOver();
   }
@@ -552,16 +593,16 @@ hud.setWeapon(WEAPONS[0]);
 // Dev-only inspection hook (inert without ?dev in the URL). Used for automated testing.
 if (new URLSearchParams(location.search).has('dev')) {
   window.__t = {
-    THREE, player, enemies, world, portals, hazards, pickups, effects, camera, scene, input, raycastWorld, GRAPPLE, katana,
+    THREE, player, enemies, world, portals, hazards, pickups, powerups, effects, camera, scene, input, raycastWorld, GRAPPLE, katana,
     beginPlay, fireStrap, fireDraco, firePortal, setWeapon, engagePower, disengagePower, fireGatling, fireMissile, gatling,
     get state() { return state; }, set state(v) { state = v; },
     get weapon() { return weapon; },
     get power() { return power; },
+    get powerPermanent() { return powerPermanent; },
     get missiles() { return missiles; },
     get wasted() { return wasted; },
     get lockTarget() { return lockTarget; },
     get lockProgress() { return lockProgress; },
-    get charge() { return charge; }, set charge(v) { charge = v; },
     get hardcore() { return hardcore; }, set hardcore(v) { hardcore = v; player.hardcore = v; },
   };
 }
