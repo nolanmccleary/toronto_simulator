@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Toronto Simulator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="crosshair"><span></span><span></span></div>
+    <div id="scope"></div>
+    <div id="seered"></div>
+
+    <div id="jethud">
+      <div class="jet-corner tl"></div><div class="jet-corner tr"></div>
+      <div class="jet-corner bl"></div><div class="jet-corner br"></div>
+      <div id="jet-boresight"><i></i><i></i><i></i><i></i></div>
+      <div id="jet-heading">HDG <b id="jet-hdg">000</b><div class="jet-ticks"></div></div>
+      <div id="jet-left" class="jet-side"><span class="jet-cap">SPD</span><b id="jet-spd">0</b><div class="jet-ladder"></div></div>
+      <div id="jet-right" class="jet-side"><span class="jet-cap">ALT</span><b id="jet-alt">0</b><div class="jet-ladder"></div></div>
+      <div id="jet-status">● PRESSA · WPN KATANA · GUNS GUNS GUNS</div>
+      <div id="lock"><div id="lock-text">LOCKING</div><div id="lock-bar"><div id="lock-fill"></div></div></div>
+      <div class="jet-scan"></div>
+    </div>
+    <div id="targets"></div>
+    <div id="damage"></div>
+
+    <div id="boss-wrap">
+      <div id="boss-name">BOSSMAN</div>
+      <div id="boss-bar"><div id="boss-fill"></div></div>
+    </div>
+
+    <div id="charge-wrap">
+      <div id="charge-label"></div>
+      <div id="charge-bar"><div id="charge-fill"></div></div>
+    </div>
+
+    <div id="top-left">
+      <div class="stat"><label>WAVE</label><b id="wave">0</b></div>
+      <div class="stat"><label>SCORE</label><b id="score">0</b></div>
+      <div class="stat"><label>LEFT</label><b id="remaining">0</b></div>
+    </div>
+
+    <div id="mode-tag">TORONTOMANS</div>
+
+    <div id="bottom-left">
+      <div id="hp-bar"><div id="hp-fill"></div></div>
+      <div id="hp-row"><label>HP</label><b id="hp-text">100</b></div>
+    </div>
+
+    <div id="weapon-panel">
+      <div id="portal-dots">
+        <span id="portal-a" class="pdot"></span>
+        <span id="portal-b" class="pdot"></span>
+      </div>
+      <div id="weapon-name">BLASTER</div>
+      <div id="weapon-hint">scroll to switch</div>
+    </div>
+
+    <div id="banner"></div>
+  </div>
+
+  <!-- Start / Pause overlay -->
+  <div id="start" class="overlay">
+    <div class="panel">
+      <h1 id="start-title">TORONTO SIMULATOR</h1>
+      <p id="start-sub">click to play</p>
+      <div class="controls">
+        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp;·&nbsp; <kbd>MOUSE</kbd> look &nbsp;·&nbsp; <kbd>SPACE</kbd> jump</span>
+        <span><kbd>SCROLL</kbd> / <kbd>1</kbd><kbd>2</kbd> switch weapon</span>
+        <span><b class="teal">Strap</b> — <kbd>CLICK</kbd> shoot (falls off with range) &nbsp;·&nbsp; <kbd>R-CLICK</kbd> zipline</span>
+        <span><b class="port">Slider</b> — <kbd>L-CLICK</kbd> orange &nbsp; <kbd>R-CLICK</kbd> blue, then dash through</span>
+        <span><b class="draco">Draco</b> — sniper: slow, semi-auto, big damage &nbsp;·&nbsp; <kbd>R-CLICK</kbd> scope to aim</span>
+        <span>hold <kbd>W</kbd> into any structure to climb &nbsp;·&nbsp; <em>amber pad</em> to launch</span>
+        <span>avoid the <b class="danger-text">red spikes</b></span>
+        <span><kbd>ESC</kbd> pause &nbsp;·&nbsp; <kbd>M</kbd> mute</span>
+      </div>
+      <button id="hardcore-toggle"><span class="box"></span> TORONTOMANS MODE — one hit, you're done</button>
+    </div>
+  </div>
+
+  <!-- Game over overlay -->
+  <div id="gameover" class="overlay">
+    <div class="panel">
+      <h1 class="danger">DOWNED</h1>
+      <p>you reached wave <b id="final-wave">0</b> &nbsp;·&nbsp; <b id="final-score">0</b> eliminated</p>
+      <p class="sub">click to play again</p>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

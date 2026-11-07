@@ -1,0 +1,11 @@
+{
+  "name": "toronto-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal first-person PvE survival shooter. Clean geometric forms, a dusk palette, and the CN Tower on the horizon.",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  }
+}
