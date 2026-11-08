@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, GATLING, MISSILE, POWER, JET, PLAYER } from './config.js';
+import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, PUMP, GATLING, MISSILE, POWER, JET, CIVIC, PLAYER } from './config.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemies } from './enemies.js';
@@ -8,6 +8,7 @@ import { Portals } from './portals.js';
 import { Hazards } from './hazards.js';
 import { Pickups } from './pickups.js';
 import { Powerups } from './powerups.js';
+import { Civic } from './civic.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
 import { raycastWorld } from './raycast.js';
@@ -30,6 +31,7 @@ const portals = new Portals(scene, effects);
 const hazards = new Hazards(scene, effects);
 const pickups = new Pickups(scene, effects);
 const powerups = new Powerups(scene, effects);
+const civic = new Civic(scene, effects);
 enemies.bind(world);
 hazards.bind(world);
 pickups.bind(world);
@@ -55,9 +57,10 @@ let clock = performance.now();
 let worldTime = 0;
 
 // --- Power modes: Somali Samurai + XM01-Night Yute ---
-const KATANA_REACH = 8.5;
+const KATANA_REACH = 5.0;
 const KATANA_CD = 0.3;
 let power = null;                // null | 'somali' | 'nightyute'
+let driving = false;            // Brampton Berserker: inside the impounded Civic
 let powerPermanent = false;      // invoked from /console → infinite + indefinite
 let powerSnapshot = 100;         // health to restore on revert
 let swingCd = 0;
@@ -98,6 +101,7 @@ const KPOSE = {
   idle:  { p: [0.62, -0.95, -1.25], r: [0.2, 0.3, 0.5] },
   wind:  { p: [0.78, -0.72, -1.15], r: [-0.2, 0.6, -0.55] },
   slash: { p: [0.1, -1.0, -1.1],   r: [0.6, -0.25, 1.5] },
+  guard: { p: [0.22, -0.5, -0.95],  r: [0.0, 0.2, 1.3] },   // blade raised across the view
 };
 function applyPose(a, b, t) {
   katana.position.set(a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t);
@@ -127,6 +131,172 @@ const gatBarrels = new THREE.Group();
   camera.add(gatling);
 })();
 
+// --- Held weapon viewmodels (Strap / Draco / Pump), lower-right, barrel toward -z ---
+// Minimal neon-edged geometry, same visual language as the katana & Gat. Only the
+// currently selected weapon is visible, and only while no power mode is active.
+const guns = {};        // name -> { group, base:{p,r}, ads?:{p,r} }
+let vmKick = 0;         // 0..1 recoil on the held gun, decays each frame
+let vmIdleT = 0;        // idle-sway clock
+let vmAds = 0;          // 0..1 aim-down-sights blend (pump iron sights)
+function gunPart(geo, fill, line, opacity = 0.85) {
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: fill }));
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color: line, transparent: true, opacity, blending: THREE.AdditiveBlending })));
+  return m;
+}
+function makeGun(name, base, build) {
+  const g = new THREE.Group();
+  build(g);
+  g.position.set(base.p[0], base.p[1], base.p[2]);
+  g.rotation.set(base.r[0], base.r[1], base.r[2]);
+  g.visible = false;
+  camera.add(g);
+  guns[name] = { group: g, base };
+}
+const GUN_BODY = 0x12151c, GUN_TUBE = 0x0e1016;
+// Modeling helpers for the viewmodels.
+const place = (m, x, y, z, rx = 0) => { m.position.set(x, y, z); if (rx) m.rotation.x = rx; return m; };
+const box = (w, h, d, line, op = 1) => gunPart(new THREE.BoxGeometry(w, h, d), GUN_BODY, line, op);
+const tubeZ = (r, len, line, seg = 16) => { const m = gunPart(new THREE.CylinderGeometry(r, r, len, seg), GUN_TUBE, line, 0.85); m.rotation.x = Math.PI / 2; return m; };
+const taperZ = (r1, r2, len, line) => { const m = gunPart(new THREE.CylinderGeometry(r1, r2, len, 16), GUN_TUBE, line, 0.85); m.rotation.x = Math.PI / 2; return m; };
+const glow = (w, h, d, color) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }));
+const guard = (color) => { const m = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.007, 6, 18), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 })); m.rotation.y = Math.PI / 2; return m; };
+const lensDisc = (r, color) => new THREE.Mesh(new THREE.CircleGeometry(r, 18), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+
+makeGun('strap', { p: [0.25, -0.29, -0.55], r: [0.06, -0.12, 0.02] }, (g) => {
+  const c = PALETTE.primary; // teal compact carbine
+  g.add(place(box(0.1, 0.13, 0.36, c), 0, 0, -0.06));          // receiver
+  g.add(place(box(0.08, 0.04, 0.14, c), 0, 0.085, -0.02));     // top cover / sight rib
+  g.add(place(tubeZ(0.026, 0.32, c), 0, 0.02, -0.34));         // barrel
+  g.add(place(taperZ(0.04, 0.03, 0.07, c), 0, 0.02, -0.52));   // flash hider
+  g.add(place(glow(0.014, 0.014, 0.26, c), 0, 0.093, -0.12));  // glowing top rail
+  g.add(place(box(0.018, 0.05, 0.018, c, 0.8), 0, 0.1, -0.3)); // front sight post
+  g.add(place(guard(c), 0, -0.075, 0.0));                      // trigger guard
+  g.add(place(box(0.065, 0.19, 0.08, c), 0, -0.15, 0.07, 0.36));   // grip
+  g.add(place(box(0.05, 0.18, 0.055, c), 0, -0.145, -0.09, -0.12)); // magazine
+});
+makeGun('draco', { p: [0.24, -0.25, -0.56], r: [0.045, -0.1, 0.015] }, (g) => {
+  const c = 0xffd166; // amber precision rifle
+  g.add(place(box(0.09, 0.11, 0.58, c), 0, 0, -0.12));         // long receiver
+  g.add(place(tubeZ(0.019, 0.64, c), 0, 0.008, -0.62));        // long barrel
+  g.add(place(taperZ(0.04, 0.03, 0.09, c), 0, 0.008, -0.96));  // muzzle brake
+  g.add(place(tubeZ(0.04, 0.28, c, 20), 0, 0.12, -0.14));      // scope tube
+  g.add(place(box(0.016, 0.07, 0.016, c, 0.8), 0, 0.07, -0.03));  // scope mount
+  g.add(place(box(0.016, 0.07, 0.016, c, 0.8), 0, 0.07, -0.25));  // scope mount
+  g.add(place(lensDisc(0.034, c), 0, 0.12, -0.005));          // glowing rear lens
+  g.add(place(box(0.05, 0.035, 0.12, c, 0.8), 0, 0.045, 0.2));    // cheek riser
+  g.add(place(guard(c), 0, -0.075, 0.02));
+  g.add(place(box(0.065, 0.18, 0.08, c), 0, -0.14, 0.11, 0.3));   // grip
+  g.add(place(box(0.07, 0.12, 0.22, c), 0, -0.03, 0.33));      // stock
+});
+makeGun('pump', { p: [0.25, -0.29, -0.55], r: [0.05, -0.12, 0.02] }, (g) => {
+  const c = 0xff8c42; // orange shotgun
+  g.add(place(box(0.1, 0.12, 0.44, c), 0, 0, -0.04));          // receiver
+  g.add(place(tubeZ(0.044, 0.5, c), 0, 0.045, -0.42));         // wide barrel
+  g.add(place(taperZ(0.055, 0.05, 0.05, c), 0, 0.045, -0.68)); // choke
+  g.add(place(tubeZ(0.028, 0.44, c), 0, -0.035, -0.4));        // tube magazine
+  g.add(place(box(0.085, 0.07, 0.15, c), 0, -0.035, -0.3));    // pump foregrip
+  g.add(place(glow(0.013, 0.013, 0.13, c), 0, 0.006, -0.33));  // slide accent
+  g.add(place(box(0.02, 0.035, 0.018, c, 0.8), 0, 0.105, -0.52)); // bead sight
+  g.add(place(guard(c), 0, -0.07, 0.02));
+  g.add(place(box(0.075, 0.19, 0.09, c), 0, -0.14, 0.13, 0.3));  // grip
+  g.add(place(box(0.08, 0.13, 0.22, c), 0, -0.02, 0.33));      // stock
+});
+// Iron-sight pose: centre the gun so the bead (local y≈0.105, z≈-0.52) lands on the crosshair.
+guns.pump.ads = { p: [0.0, -0.105, -0.5], r: [0, 0, 0] };
+// Show only the held gun, and only when free (no power mode / not driving the Civic).
+function updateGunVisibility() {
+  const show = (power || driving) ? null : WEAPONS[weapon];
+  for (const name in guns) guns[name].group.visible = (name === show);
+}
+function updateViewmodels(dt) {
+  vmKick = Math.max(0, vmKick - dt * 7);
+  vmIdleT += dt;
+  // Pump iron sights: ramp the ADS blend up while right-click is held.
+  const aiming = !power && WEAPONS[weapon] === 'pump' && input.firing2;
+  vmAds += ((aiming ? 1 : 0) - vmAds) * Math.min(1, dt * 14);
+  for (const name in guns) {
+    const { group, base, ads } = guns[name];
+    if (!group.visible) continue;
+    const t = ads ? vmAds : 0;                 // only the pump has an ADS pose
+    const calm = 1 - t * 0.85;                 // steadier hold while aiming
+    const sway = Math.sin(vmIdleT * 1.6) * 0.004 * calm;
+    const swayR = Math.sin(vmIdleT * 1.1) * 0.01 * calm;
+    const px = base.p[0] + (t ? (ads.p[0] - base.p[0]) * t : 0);
+    const py = base.p[1] + (t ? (ads.p[1] - base.p[1]) * t : 0);
+    const pz = base.p[2] + (t ? (ads.p[2] - base.p[2]) * t : 0);
+    const rx = base.r[0] + (t ? (ads.r[0] - base.r[0]) * t : 0);
+    const ry = base.r[1] + (t ? (ads.r[1] - base.r[1]) * t : 0);
+    const rz = base.r[2] + (t ? (ads.r[2] - base.r[2]) * t : 0);
+    group.position.set(px, py + sway, pz + vmKick * 0.12); // recoil shoves it back
+    group.rotation.set(rx - vmKick * 0.25, ry, rz + swayR); // ...and kicks the muzzle up
+  }
+}
+
+// --- Brampton Berserker: driver's-seat interior (steering wheel + left hand + dash) ---
+const civicInterior = new THREE.Group();
+const wheelSpin = new THREE.Group();   // the rim + hand, rotates with steering
+(() => {
+  const red = CIVIC.color;
+  const edge = (geo, op = 1) => new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: red, transparent: true, opacity: op, blending: THREE.AdditiveBlending }));
+  const dark = (geo) => new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x16090c }));
+  // Steering wheel: a big rim + spokes in a pivot tilted back toward the driver.
+  const pivot = new THREE.Group();
+  pivot.position.set(0.0, -0.36, -0.52);
+  pivot.rotation.x = -0.92;
+  const rimGeo = new THREE.TorusGeometry(0.32, 0.03, 12, 32);
+  wheelSpin.add(dark(rimGeo), edge(rimGeo));
+  for (let i = 0; i < 3; i++) {
+    const a = i * (Math.PI * 2 / 3) - Math.PI / 2;  // spokes to bottom-left/right + top
+    const spokeGeo = new THREE.BoxGeometry(0.03, 0.28, 0.02);
+    const s = dark(spokeGeo); s.position.set(Math.cos(a) * 0.15, Math.sin(a) * 0.15, 0); s.rotation.z = a - Math.PI / 2;
+    const se = edge(spokeGeo, 0.9); se.position.copy(s.position); se.rotation.copy(s.rotation);
+    wheelSpin.add(s, se);
+  }
+  const hubGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 14);
+  const hub = dark(hubGeo); hub.rotation.x = Math.PI / 2; wheelSpin.add(hub, (() => { const e = edge(hubGeo, 0.8); e.rotation.x = Math.PI / 2; return e; })());
+  // Left hand gripping the 9-o'clock position (turns with the wheel).
+  const hand = new THREE.Group();
+  const palmGeo = new THREE.BoxGeometry(0.14, 0.17, 0.11);
+  hand.add(dark(palmGeo), edge(palmGeo));
+  for (let f = 0; f < 4; f++) {
+    const fg = new THREE.BoxGeometry(0.12, 0.035, 0.03);
+    const fm = dark(fg); fm.position.set(0.04, 0.06 - f * 0.038, 0.06);
+    const fe = edge(fg, 0.9); fe.position.copy(fm.position);
+    hand.add(fm, fe);
+  }
+  const thumbGeo = new THREE.BoxGeometry(0.04, 0.09, 0.03);
+  const thumb = dark(thumbGeo); thumb.position.set(0.0, 0.02, 0.09); thumb.rotation.z = 0.5;
+  hand.add(thumb, (() => { const e = edge(thumbGeo, 0.9); e.position.copy(thumb.position); e.rotation.copy(thumb.rotation); return e; })());
+  hand.position.set(-0.32, 0, 0.03);
+  wheelSpin.add(hand);
+  pivot.add(wheelSpin);
+  civicInterior.add(pivot);
+  // Dashboard lip across the bottom + A-pillar hints up the sides.
+  const dashGeo = new THREE.BoxGeometry(2.0, 0.34, 0.5);
+  const dash = dark(dashGeo); dash.position.set(0, -0.82, -0.7);
+  const dashE = edge(dashGeo, 0.85); dashE.position.copy(dash.position);
+  civicInterior.add(dash, dashE);
+  civicInterior.visible = false;
+  camera.add(civicInterior);
+})();
+
+const _cf = new THREE.Vector3(), _cr = new THREE.Vector3(), _cEuler = new THREE.Euler();
+function driveCamera() {
+  const yaw = civic.yaw;
+  _cf.set(-Math.sin(yaw), 0, -Math.cos(yaw)); // car forward
+  _cr.set(-_cf.z, 0, _cf.x);                  // car right
+  camera.position.set(
+    civic.pos.x - _cr.x * 0.42 - _cf.x * 0.15, // left of centre, a touch back
+    1.3,
+    civic.pos.z - _cr.z * 0.42 - _cf.z * 0.15,
+  );
+  camera.quaternion.setFromEuler(_cEuler.set(-0.15, yaw, 0, 'YXZ')); // look down a little at the wheel/hood
+}
+function updateCivicInterior(dt) {
+  wheelSpin.rotation.z = -civic.wheel * 1.2; // visually turn the wheel with steering
+}
+
 // Grapple rope visual.
 const ropeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
 const rope = new THREE.Line(ropeGeo, new THREE.LineBasicMaterial({ color: PALETTE.primary, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -149,6 +319,15 @@ function muzzlePoint(ray) {
   _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
   return _muzzle.copy(ray.origin).addScaledVector(ray.dir, 0.5).addScaledVector(_right, 0.16).addScaledVector(_up, -0.14);
 }
+// Let the player's own fire hit their parked Civic — enough to detonate it as a bomb.
+function shootCivic(ray, dmg, range) {
+  if (!civic.alive || driving) return;
+  const t = civic.rayHit(ray, range);
+  if (t == null) return;
+  civic.damage(dmg);
+  effects.muzzle(ray.origin.clone().addScaledVector(ray.dir, t), CIVIC.color);
+  if (civic.hp <= 0) explodeCivic();
+}
 function fireStrap() {
   const ray = player.getRay();
   const mz = muzzlePoint(ray).clone();
@@ -156,8 +335,31 @@ function fireStrap() {
     damage: WEAPON.damage, range: WEAPON.range,
     falloff: { start: WEAPON.falloffStart, end: WEAPON.falloffEnd, min: WEAPON.falloffMin },
   });
+  shootCivic(ray, WEAPON.damage, WEAPON.range);
   effects.tracer(mz, res.end, PALETTE.primary);
   effects.muzzle(mz, PALETTE.white);
+  vmKick = 0.5;
+  sfx.shoot();
+}
+function firePump(ads = false) {
+  const spread = ads ? PUMP.spreadAds : PUMP.spread;
+  const mz = muzzlePoint(player.getRay()).clone();
+  // A fan of pellets; each is its own hitscan against the nearest thing in its path.
+  for (let i = 0; i < PUMP.pellets; i++) {
+    const ray = player.getRay();
+    ray.dir.x += (Math.random() - 0.5) * spread;
+    ray.dir.y += (Math.random() - 0.5) * spread;
+    ray.dir.z += (Math.random() - 0.5) * spread;
+    ray.dir.normalize();
+    const res = enemies.hitscan(ray, {
+      damage: PUMP.damage, range: PUMP.range,
+      falloff: { start: PUMP.falloffStart, end: PUMP.falloffEnd, min: PUMP.falloffMin },
+    });
+    shootCivic(ray, PUMP.damage, PUMP.range);
+    effects.tracer(mz, res.end, PALETTE.hazard);
+  }
+  effects.muzzle(mz, PALETTE.white);
+  vmKick = 1.0;
   sfx.shoot();
 }
 function fireDraco() {
@@ -165,10 +367,12 @@ function fireDraco() {
   const mz = muzzlePoint(ray).clone();
   // Sniper: no falloff, and the round punches through everything in line.
   const res = enemies.hitscan(ray, { damage: DRACO.damage, range: DRACO.range, pierce: true });
+  shootCivic(ray, DRACO.damage, DRACO.range);
   effects.beam(mz, res.end, 0xfff2b0, { radius: 0.11, life: 0.32 });
   effects.tracer(mz, res.end, PALETTE.white);
   effects.muzzle(mz, PALETTE.white);
   effects.muzzle(res.end, 0xfff2b0);
+  vmKick = 1.0;
   sfx.snipe();
 }
 function firePortal(which) {
@@ -184,6 +388,7 @@ function setWeapon(i) {
   player.releaseGrapple();
   player.scopeFov = null; hud.setScoped(false);
   hud.setWeapon(WEAPONS[weapon]);
+  updateGunVisibility();
   sfx.swap();
 }
 
@@ -213,8 +418,9 @@ function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
   }
   katana.visible = (kind === 'somali');
   gatling.visible = (kind === 'nightyute');
+  updateGunVisibility(); // hide the held gun while a power mode is active
   hud.setPowerMode(kind);
-  hud.showBanner(kind === 'somali' ? 'SOMALI MODE ACTIVATED' : 'XM01-NIGHT YUTE', 2.4);
+  hud.showBanner(kind === 'somali' ? 'WALLAHI MODE ACTIVATED' : 'XM01-NIGHT YUTE', 2.4);
   sfx.wave();
 }
 function disengagePower() {
@@ -222,26 +428,84 @@ function disengagePower() {
   power = null; powerPermanent = false;
   player.invuln = false; player.auxHp = 0;
   player.speedMul = 1; player.flySpeedMul = 1; player.jetpackEnabled = false; player.flying = false;
+  player.guarding = false;
   katana.visible = false; gatling.visible = false; katanaState.swinging = false;
   clearDrizzy();
   player.health = Math.min(PLAYER.maxHealth, powerSnapshot); // save as before
   wasted.length = 0; kTaps = 0;
   hud.setPowerMode(null);
   hud.setWeapon(WEAPONS[weapon]);
+  updateGunVisibility(); // bring the held gun back
 }
 function resetPower() {
   power = null; powerPermanent = false; swingCd = 0; kTaps = 0; wasted.length = 0;
   player.invuln = false; player.auxHp = 0; player.speedMul = 1; player.flySpeedMul = 1;
-  player.jetpackEnabled = false; player.flying = false;
+  player.jetpackEnabled = false; player.flying = false; player.guarding = false;
   katana.visible = false; gatling.visible = false; katanaState.swinging = false;
   clearDrizzy();
+  updateGunVisibility();
   hud.setPowerMode(null);
+}
+
+// --- Brampton Berserker (impounded Civic) ---
+function enterCivic({ permanent = false } = {}) {
+  if (driving || power || !civic.alive) return;
+  driving = true;
+  civic.invincible = permanent;
+  player.vehicle = civic;        // enemy hits now drain the Civic's HP
+  player.hitRadius = CIVIC.radius; // and connect against the whole car body, not a point
+  player.releaseGrapple();
+  player.scopeFov = null; hud.setScoped(false);
+  updateGunVisibility();         // hide the held gun
+  civicInterior.visible = true;
+  hud.setCivicMode(true);
+  hud.showBanner('BRAMPTON BERSERKER MODE ENGAGED', 2.4);
+  sfx.wave();
+}
+function spawnAndDrive(pos, yaw, opts) {
+  if (!civic.alive) civic.spawn(pos, yaw);
+  enterCivic(opts);
+}
+function leaveCivicHud() {
+  driving = false;
+  player.vehicle = null;
+  player.hitRadius = PLAYER.radius;
+  civicInterior.visible = false;
+  hud.setCivicMode(false);
+  hud.setWeapon(WEAPONS[weapon]);
+  updateGunVisibility();
+}
+function exitCivic() {
+  if (!driving) return;
+  // step out the driver's door (to the car's left)
+  const yaw = civic.yaw, lx = -Math.cos(yaw), lz = Math.sin(yaw);
+  leaveCivicHud();
+  player.pos.set(civic.pos.x + lx * 2.6, 0, civic.pos.z + lz * 2.6);
+  player.vel.set(0, 0, 0);
+  player.yaw = yaw; player.pitch = 0;
+}
+function explodeCivic() {
+  const wasDriving = driving;
+  civic.explode(enemies);
+  if (wasDriving) { leaveCivicHud(); player.pos.set(civic.pos.x, 0, civic.pos.z); player.vel.set(0, 0, 0); player.yaw = civic.yaw; }
+  hud.showBanner('CIVIC REPOSSESSED', 2.4);
+  sfx.over();
+}
+function resetCivic() {
+  if (driving) leaveCivicHud();
+  civic.dispose();
 }
 
 function animateKatana(dt) {
   if (!katanaState.swinging) {
-    // Gentle idle sway so it feels alive.
     katanaState.idleT += dt;
+    if (player.guarding) {
+      // Braced guard stance — a tight shimmer, no loose sway.
+      applyPose(KPOSE.guard, KPOSE.guard, 0);
+      katana.position.y += Math.sin(katanaState.idleT * 7) * 0.006;
+      return;
+    }
+    // Gentle idle sway so it feels alive.
     applyPose(KPOSE.idle, KPOSE.idle, 0);
     katana.position.y += Math.sin(katanaState.idleT * 1.8) * 0.015;
     katana.rotation.z += Math.sin(katanaState.idleT * 1.3) * 0.03;
@@ -260,10 +524,14 @@ function powerUpdate(dt) {
   for (let i = wasted.length - 1; i >= 0; i--) { wasted[i].t += dt; if (wasted[i].t > 0.6) wasted.splice(i, 1); }
 }
 
-// Somali Samurai: Sauga Sabre only (no zipline, no HUD).
+// Somali Samurai: Sauga Sabre. Left-click swings; hold right-click to raise a
+// guard that parries frontal melee and reflects projectiles (can't swing while up).
 function somaliWeapons(dt) {
   swingCd -= dt;
-  if (input.firing && swingCd <= 0) {
+  const guarding = input.firing2;
+  player.guarding = guarding;
+  if (guarding) player.guardDir.copy(player._fwd); // horizontal facing
+  if (input.firing && !guarding && swingCd <= 0) {
     swingCd = KATANA_CD;
     katanaState.swinging = true; katanaState.t = 0;
     enemies.katanaSweep(player, KATANA_REACH);
@@ -303,6 +571,7 @@ function fireGatling() {
   ray.dir.normalize();
   const mz = muzzlePoint(ray).clone();
   const res = enemies.hitscan(ray, { damage: GATLING.damage, range: GATLING.range });
+  shootCivic(ray, GATLING.damage, GATLING.range);
   effects.tracer(mz, res.end, GATLING.color);   // thin tracer only — no strobing muzzle flash
   sfx.gat();
 }
@@ -405,6 +674,7 @@ function beginPlay() {
   powerups.reset();
   weaponCd = 0;
   resetPower();
+  resetCivic();
   setWeapon(0);
   hud.setHealth(player.health, PLAYER.maxHealth);
   hud.hideBoss();
@@ -412,12 +682,14 @@ function beginPlay() {
   hud.showStart(false);
   hud.showGameOver(false);
   hud.showBanner('GET READY', 2.0);
+  hud.showCompass(true);
   state = 'playing';
 }
 
 function gameOver() {
   state = 'dead';
   hud.hideBoss();
+  hud.showCompass(false);
   input.exitLock();
   sfx.over();
   hud.showGameOver(true, enemies.score, enemies.wave);
@@ -462,18 +734,26 @@ addEventListener('keydown', (e) => {
   // Tap out of a /console-invoked (indefinite) mode with six K presses.
   if (e.code === 'KeyK' && !e.repeat) {
     kTaps += 1; kTapTimer = 1.3;
-    if (power && powerPermanent && kTaps >= 6) { kTaps = 0; disengagePower(); }
+    if (kTaps >= 6) {
+      if (power && powerPermanent) { kTaps = 0; disengagePower(); }
+      else if (driving && civic.invincible) { kTaps = 0; exitCivic(); civic.dispose(); }
+    }
     return;
   }
 
-  // "6" activates the power-up package you're standing near.
-  if (e.code === 'Digit6' && !power) {
-    const mode = powerups.nearMode(player);
-    if (mode) { powerups.consume(); engagePower(mode, { permanent: false, aux: POWER.auxHp }); }
+  // "E" — enter/exit the Civic, or activate the power-up package you're standing on.
+  if (e.code === 'KeyE' && !e.repeat) {
+    if (driving) { exitCivic(); return; }
+    if (civic.alive && civic.nearPlayer(player)) { enterCivic(); return; }
+    if (!power) {
+      const mode = powerups.nearMode(player);
+      if (mode === 'civic') { powerups.consume(); spawnAndDrive(player.pos.clone(), player.yaw); }
+      else if (mode) { powerups.consume(); engagePower(mode, { permanent: false, aux: POWER.auxHp }); }
+    }
     return;
   }
 
-  if (power) return; // weapon switching disabled during power modes
+  if (power || driving) return; // weapon switching disabled during power modes / driving
   if (e.code === 'Digit1') setWeapon(0);
   if (e.code === 'Digit2') setWeapon(1);
   if (e.code === 'Digit3') setWeapon(2);
@@ -486,6 +766,7 @@ function parseMode(s) {
   s = (s || '').toLowerCase();
   if (/somali|samurai|wallahi/.test(s)) return 'somali';
   if (/yute|drizzy|xm01|night/.test(s)) return 'nightyute';
+  if (/brampton|berserker|civic|honda/.test(s)) return 'civic';
   return null;
 }
 const consoleInput = document.getElementById('console-input');
@@ -494,7 +775,8 @@ consoleInput.addEventListener('keydown', (e) => {
   if (e.code === 'Enter') {
     const mode = parseMode(consoleInput.value);
     consoleInput.value = ''; closeConsole();
-    if (mode) engagePower(mode, { permanent: true });
+    if (mode === 'civic') { if (!power && !driving) spawnAndDrive(player.pos.clone(), player.yaw, { permanent: true }); }
+    else if (mode) engagePower(mode, { permanent: true });
     state = 'paused'; hud.setStartMode('paused'); hud.showStart(true); // pointer-lock lost → resume overlay
   } else if (e.code === 'Escape') {
     consoleInput.value = ''; closeConsole();
@@ -522,7 +804,16 @@ function loop() {
     if (kTapTimer > 0) { kTapTimer -= dt; if (kTapTimer <= 0) kTaps = 0; }
     enemies.pendingCharge = 0; // (charge system removed; keep the accumulator clear)
 
-    if (power) {
+    if (driving) {
+      civic.update(dt, input, world, enemies, worldTime);
+      player.pos.copy(civic.pos);   // enemies target the car; its hits drain the Civic
+      player.yaw = civic.yaw;       // compass reads the car's heading
+      input.consumeLook();          // discard mouse-look while driving (view is locked forward)
+      driveCamera();
+      updateCivicInterior(dt);
+      hud.showPrompt(null);
+      if (civic.hp <= 0) explodeCivic();
+    } else if (power) {
       powerUpdate(dt);
       hud.showPrompt(null);
     } else {
@@ -532,7 +823,7 @@ function loop() {
       const fireEdge = input.firing && !firePrev; // rising edge (for semi-auto)
       firePrev = input.firing;
       const wk = WEAPONS[weapon];
-      if (wk !== 'draco' && player.scopeFov) { player.scopeFov = null; hud.setScoped(false); }
+      if (wk !== 'draco' && wk !== 'pump' && player.scopeFov) { player.scopeFov = null; hud.setScoped(false); }
 
       if (wk === 'strap') {
         if (input.firing && weaponCd <= 0) { weaponCd = WEAPON.cooldown; fireStrap(); }
@@ -542,6 +833,10 @@ function loop() {
           if (input.firing) { weaponCd = PORTAL.cooldown; firePortal('A'); }
           else if (input.firing2) { weaponCd = PORTAL.cooldown; firePortal('B'); }
         }
+      } else if (wk === 'pump') { // shotgun: semi-auto spread, right-click aims down (zoom + choke)
+        const ads = input.firing2;
+        player.scopeFov = ads ? PUMP.adsFov : null;
+        if (fireEdge && weaponCd <= 0) { weaponCd = PUMP.cooldown; firePump(ads); }
       } else { // draco (sniper): semi-auto, scope on right-mouse
         const scoped = input.firing2;
         player.scopeFov = scoped ? DRACO.scopeFov : null;
@@ -549,19 +844,24 @@ function loop() {
         if (fireEdge && weaponCd <= 0) { weaponCd = DRACO.cooldown; fireDraco(); }
       }
     }
+    if (!driving) updateViewmodels(dt);
 
-    const ev = player.update(dt, input, world);
-    if (player._enteringPortal) portals.teleport(player, player._enteringPortal);
-    updateRope();
-    if (ev.jumped) sfx.jump();
-    if (ev.launched) sfx.launch();
+    if (!driving) {
+      const ev = player.update(dt, input, world);
+      if (player._enteringPortal) portals.teleport(player, player._enteringPortal);
+      updateRope();
+      if (ev.jumped) sfx.jump();
+      if (ev.launched) sfx.launch();
+    }
 
     enemies.update(dt, player, worldTime, hazards.activeZones());
     portals.update(dt);
     hazards.update(dt, player, enemies.wave, enemies.state === 'active', portals, enemies);
     pickups.update(dt, player, true);
-    powerups.update(dt, player, !power); // only offer a package when not already powered up
-    hud.showPrompt(power ? null : powerups.nearMode(player));
+    // Offer a package only when free (not powered-up / driving); don't stack a 2nd Civic.
+    powerups.update(dt, player, !power && !driving, civic.alive ? ['civic'] : null);
+    const nearCivic = civic.alive && !driving && civic.nearPlayer(player);
+    hud.showPrompt(power || driving ? null : (nearCivic ? 'civic-enter' : powerups.nearMode(player)));
 
     // Aux-HP package modes revert (restoring health) once the shield is spent.
     if (power && !powerPermanent && player.auxHp <= 0) disengagePower();
@@ -574,8 +874,10 @@ function loop() {
 
     hud.setHealth(player.health, PLAYER.maxHealth);
     hud.setStats(enemies.wave, enemies.score, enemies.remaining);
-    hud.setPortalStatus(!power && WEAPONS[weapon] === 'slider', portals.a.active, portals.b.active);
-    hud.setPowerStatus(power, powerPermanent ? Infinity : player.auxHp, POWER.auxHp, player.jetpackEnabled ? player.fuel / JET.fuelMax : -1);
+    hud.setCompass(player.yaw);
+    hud.setPortalStatus(!power && !driving && WEAPONS[weapon] === 'slider', portals.a.active, portals.b.active);
+    if (driving) hud.setCivicHealth(civic.invincible ? Infinity : civic.hp, civic.maxHp);
+    else hud.setPowerStatus(power, powerPermanent ? Infinity : player.auxHp, POWER.auxHp, player.jetpackEnabled ? player.fuel / JET.fuelMax : -1);
 
     if (!player.alive) gameOver();
   }
@@ -594,8 +896,10 @@ hud.setWeapon(WEAPONS[0]);
 if (new URLSearchParams(location.search).has('dev')) {
   window.__t = {
     THREE, player, enemies, world, portals, hazards, pickups, powerups, effects, camera, scene, input, raycastWorld, GRAPPLE, katana,
-    beginPlay, fireStrap, fireDraco, firePortal, setWeapon, engagePower, disengagePower, fireGatling, fireMissile, gatling,
+    beginPlay, fireStrap, fireDraco, firePump, firePortal, setWeapon, engagePower, disengagePower, fireGatling, fireMissile, gatling, guns,
+    civic, spawnAndDrive, enterCivic, exitCivic, explodeCivic,
     get state() { return state; }, set state(v) { state = v; },
+    get driving() { return driving; },
     get weapon() { return weapon; },
     get power() { return power; },
     get powerPermanent() { return powerPermanent; },

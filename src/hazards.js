@@ -162,8 +162,10 @@ export class Hazards {
       const pz = Math.max(c.min.z, Math.min(player.pos.z, c.max.z));
       return Math.hypot(player.pos.x - px, player.pos.z - pz);
     };
-    cs.sort((a, b) => dist(a) - dist(b));
-    const c = cs[Math.floor(Math.random() * Math.min(4, cs.length))];
+    // Prefer walls a comfortable distance away (not right on top of the player).
+    let pool = cs.filter((c) => { const d = dist(c); return d >= HAZARD.nearMin && d <= HAZARD.nearMax + 6; });
+    if (!pool.length) { cs.sort((a, b) => dist(a) - dist(b)); pool = cs; }
+    const c = pool[Math.floor(Math.random() * pool.length)];
     const cxm = (c.min.x + c.max.x) / 2, czm = (c.min.z + c.max.z) / 2;
     const dxp = player.pos.x - cxm, dzp = player.pos.z - czm;
     let nx = 0, nz = 0, ax, az;
@@ -194,11 +196,10 @@ export class Hazards {
   }
 
   update(dt, player, wave, active, portals, enemies) {
-    // Spawn pacing — keep something dangerous on the map almost always.
+    // Spawn pacing — occasional hazards, not a constant barrage.
     if (active) {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0) { this._spawn(player, wave); this.spawnTimer = this._interval(wave) * (0.85 + Math.random() * 0.3); }
-      if (this.list.length === 0 && this.spawnTimer > 0.4) this.spawnTimer = 0.4;
+      if (this.spawnTimer <= 0) { this._spawn(player, wave); this.spawnTimer = this._interval(wave) * (0.85 + Math.random() * 0.4); }
     }
 
     for (let i = this.list.length - 1; i >= 0; i--) {

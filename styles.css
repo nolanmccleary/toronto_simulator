@@ -25,15 +25,64 @@ html, body {
 
 #crosshair {
   position: absolute; left: 50%; top: 50%;
-  width: 22px; height: 22px; transform: translate(-50%, -50%);
+  width: 26px; height: 26px; transform: translate(-50%, -50%);
 }
 #crosshair span {
-  position: absolute; left: 50%; top: 50%; background: var(--teal);
-  box-shadow: 0 0 6px var(--teal); opacity: 0.85;
+  position: absolute; left: 50%; top: 50%; opacity: 0.9;
 }
-#crosshair span:nth-child(1) { width: 2px; height: 22px; transform: translate(-50%, -50%); }
-#crosshair span:nth-child(2) { width: 22px; height: 2px; transform: translate(-50%, -50%); }
+/* gapped ticks — a combat reticle, clear at the centre */
+#crosshair span:nth-child(1) {
+  width: 2px; height: 26px; transform: translate(-50%, -50%);
+  background: linear-gradient(to bottom, var(--teal) 0 28%, transparent 28% 72%, var(--teal) 72% 100%);
+}
+#crosshair span:nth-child(2) {
+  width: 26px; height: 2px; transform: translate(-50%, -50%);
+  background: linear-gradient(to right, var(--teal) 0 28%, transparent 28% 72%, var(--teal) 72% 100%);
+}
+#crosshair::before { /* centre pip */
+  content: ""; position: absolute; left: 50%; top: 50%; width: 2px; height: 2px;
+  transform: translate(-50%, -50%); background: var(--teal);
+  box-shadow: 0 0 5px var(--teal); border-radius: 50%;
+}
+#crosshair::after { /* ranging ring */
+  content: ""; position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+  transform: translate(-50%, -50%); border: 1px solid rgba(83, 240, 208, 0.26); border-radius: 50%;
+}
 #crosshair.portal span { background: #fff; box-shadow: 0 0 6px var(--amber); }
+
+/* ---- tactical viewport frame ---- */
+#frame { position: absolute; inset: 16px; pointer-events: none; }
+#frame .fc { position: absolute; width: 26px; height: 26px; border: 1.5px solid rgba(83, 240, 208, 0.4); }
+#frame .fc.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+#frame .fc.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+#frame .fc.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+#frame .fc.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* ---- heading compass tape ---- */
+#compass { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 264px; display: none; }
+#compass.on { display: block; }
+#compass-win {
+  position: relative; width: 100%; height: 24px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
+          mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
+}
+#compass-tape { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
+.ctick { position: absolute; top: 13px; width: 1px; height: 6px; background: rgba(230, 235, 255, 0.28); }
+.ctick.major { height: 9px; top: 10px; background: rgba(83, 240, 208, 0.6); }
+.ctick b {
+  position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; letter-spacing: 1px; color: var(--dim); font-weight: 600; white-space: nowrap;
+}
+.ctick b.card { color: var(--teal); font-size: 11px; }
+#compass-mark {
+  position: absolute; top: -3px; left: 50%; transform: translateX(-50%); width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--teal);
+  filter: drop-shadow(0 0 4px rgba(83, 240, 208, 0.6));
+}
+#compass-hdg {
+  margin-top: 4px; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 2px;
+  color: var(--teal); text-shadow: 0 0 8px rgba(83, 240, 208, 0.45); font-variant-numeric: tabular-nums;
+}
 
 #damage {
   position: absolute; inset: 0; opacity: 0;
@@ -52,22 +101,36 @@ html, body {
 }
 
 #top-left {
-  position: absolute; top: 22px; left: 24px;
-  display: flex; gap: 26px;
+  position: absolute; top: 28px; left: 28px;
+  padding-left: 12px; border-left: 2px solid rgba(83, 240, 208, 0.55);
 }
+#tl-head {
+  font-size: 10px; letter-spacing: 3px; color: var(--dim); margin-bottom: 8px;
+}
+#tl-head span { color: var(--teal); text-shadow: 0 0 8px rgba(83, 240, 208, 0.5); }
+.stat-row { display: flex; gap: 26px; }
 .stat { display: flex; flex-direction: column; gap: 3px; }
-.stat label { font-size: 10px; letter-spacing: 2px; color: var(--dim); }
+.stat label { font-size: 10px; letter-spacing: 2px; color: var(--dim); white-space: nowrap; }
 .stat b { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-#bottom-left { position: absolute; bottom: 26px; left: 24px; width: 240px; }
+#bottom-left {
+  position: absolute; bottom: 26px; left: 28px; width: 248px;
+  padding: 9px 12px 10px; border: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 2px solid var(--teal);
+  background: linear-gradient(90deg, rgba(83, 240, 208, 0.06), rgba(83, 240, 208, 0));
+}
+#hp-head { font-size: 10px; letter-spacing: 3px; color: var(--dim); margin-bottom: 7px; }
 #hp-bar {
   height: 10px; border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px; overflow: hidden; background: rgba(255, 255, 255, 0.05);
+  overflow: hidden; background: rgba(255, 255, 255, 0.05);
+  /* clipped corners for a HUD-panel feel */
+  clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
 }
 #hp-fill { height: 100%; width: 100%; background: var(--teal); transition: width 0.12s linear, background 0.2s; }
 #hp-row { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
 #hp-row label { font-size: 10px; letter-spacing: 2px; color: var(--dim); }
 #hp-row b { font-size: 16px; font-variant-numeric: tabular-nums; }
+#hp-pct { margin-left: auto; font-size: 11px; letter-spacing: 1px; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 #mode-tag {
   display: none;
@@ -78,7 +141,9 @@ html, body {
 }
 
 #weapon-panel {
-  position: absolute; right: 24px; bottom: 26px; text-align: right;
+  position: absolute; right: 28px; bottom: 26px; text-align: right;
+  padding: 7px 12px 7px 0; border-right: 2px solid var(--teal);
+  background: linear-gradient(270deg, rgba(83, 240, 208, 0.06), rgba(83, 240, 208, 0));
 }
 #weapon-name { font-size: 18px; font-weight: 600; letter-spacing: 2px; color: #eef1ff; }
 #weapon-hint { font-size: 10px; letter-spacing: 2px; color: var(--dim); margin-top: 2px; }
@@ -257,6 +322,8 @@ kbd {
   color: #eef1ff; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--teal); border-radius: 8px; outline: none;
   box-shadow: 0 0 24px rgba(83, 240, 208, 0.2);
 }
-.console-hint { margin-top: 12px; font-size: 11px; letter-spacing: 2px; color: var(--dim); }
+.console-modes { margin-top: 12px; font-size: 13px; letter-spacing: 1px; color: var(--dim); }
+.console-modes span { font-weight: 700; }
+.console-hint { margin-top: 8px; font-size: 11px; letter-spacing: 2px; color: var(--dim); }
 
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }

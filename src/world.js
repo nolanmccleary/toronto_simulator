@@ -30,32 +30,50 @@ function gradientSky() {
   return new THREE.Mesh(geo, mat);
 }
 
-function cnTower() {
-  const grp = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: PALETTE.silhouette, fog: false });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(6, 16, 360, 24), mat);
-  shaft.position.y = 180; grp.add(shaft);
-  const pod = new THREE.Mesh(new THREE.CylinderGeometry(26, 26, 26, 24), mat);
-  pod.position.y = 300; grp.add(pod);
-  const podLip = new THREE.Mesh(new THREE.CylinderGeometry(20, 32, 10, 24), mat);
-  podLip.position.y = 285; grp.add(podLip);
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(3, 6, 70, 16), mat);
-  upper.position.y = 345; grp.add(upper);
-  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 2.2, 120, 12), mat);
-  antenna.position.y = 420; grp.add(antenna);
-  grp.position.set(-220, 0, -820);
-  return grp;
+// The CN Tower: tapering shaft, main observation pod, SkyPod, long antenna mast.
+function cnTowerInto(grp, mat, x) {
+  const add = (geo, y) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, 0); grp.add(m); };
+  const H = 320;
+  add(new THREE.CylinderGeometry(5, 15, H, 24), H / 2);                 // shaft
+  const podY = H * 0.74;
+  add(new THREE.CylinderGeometry(24, 24, 20, 24), podY);                // main pod
+  add(new THREE.CylinderGeometry(15, 30, 11, 24), podY - 12);           // pod underside
+  const upperH = 92;
+  add(new THREE.CylinderGeometry(2.4, 5, upperH, 16), podY + 10 + upperH / 2); // upper shaft
+  add(new THREE.CylinderGeometry(8.5, 8.5, 10, 20), podY + 10 + upperH * 0.66); // SkyPod
+  const antH = 162;
+  add(new THREE.CylinderGeometry(0.3, 2, antH, 12), podY + 10 + upperH + antH / 2); // antenna
 }
 
-function horizonSlabs() {
+// Toronto's skyline as seen from Lake Ontario: CN Tower + Rogers Centre dome, the
+// financial-district tower cluster, and condo towers fanning out on both sides.
+function torontoSkyline() {
   const grp = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: PALETTE.silhouette, fog: false });
-  const defs = [[-700, -900, 900, 40], [500, -950, 700, 26], [120, -1000, 1400, 16]];
-  for (const [x, z, w, h] of defs) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 10), mat);
-    m.position.set(x, h / 2, z);
-    grp.add(m);
-  }
+  const box = (x, w, h, d = 15, y = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y + h / 2, 0); grp.add(m); };
+  const tower = (x, w, h, capH = 0) => { box(x, w, h); if (capH) box(x, w * 0.55, capH, 10, h); }; // optional slimmer cap
+
+  // West waterfront condos (CityPlace / Fort York).
+  tower(-404, 24, 150); tower(-370, 20, 198, 20); tower(-340, 26, 132);
+  tower(-302, 22, 226, 16); tower(-268, 30, 168); tower(-236, 18, 150, 22);
+
+  // Rogers Centre (SkyDome) — low wide dome beside the tower.
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(58, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+  dome.scale.set(1, 0.42, 1); dome.position.set(-120, 12, 22); grp.add(dome);
+  box(-120, 130, 22, 72);
+
+  // CN Tower.
+  cnTowerInto(grp, mat, -176);
+
+  // Financial district — the bank-tower cluster stepping up then down.
+  tower(-54, 34, 236, 14); tower(-14, 30, 300); tower(26, 42, 330, 18);
+  tower(72, 34, 300, 14); tower(114, 30, 258); tower(152, 38, 214, 12); tower(188, 26, 190);
+
+  // East condos tapering off.
+  tower(226, 24, 184, 14); tower(260, 28, 150); tower(294, 20, 208, 18);
+  tower(332, 26, 140); tower(374, 30, 172); tower(412, 22, 126);
+
+  grp.position.set(10, 0, -860);
   return grp;
 }
 
@@ -77,8 +95,7 @@ export class World {
 
     scene.fog = new THREE.Fog(PALETTE.fog, 50, 230);
     scene.add(gradientSky());
-    scene.add(cnTower());
-    scene.add(horizonSlabs());
+    scene.add(torontoSkyline());
     this._buildFloor();
     this._buildBoundary();
 

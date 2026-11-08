@@ -42,6 +42,10 @@ export class Player {
     this.flying = false;
     this.fuel = JET.fuelMax;
     this._hurtCooldown = 0;
+    this.guarding = false;                                  // katana guard (Somali mode, right-click)
+    this.guardDir = this.guardDir || new THREE.Vector3();   // horizontal facing held while guarding
+    this.vehicle = null;                                    // Civic while driving: redirects takeDamage
+    this.hitRadius = PLAYER.radius;                         // enemy-contact/projectile radius (grows while driving)
 
     // jump feel
     this.coyote = 0; this.jumpBuf = 0;
@@ -90,6 +94,7 @@ export class Player {
   releaseGrapple() { this.grapple.active = false; }
 
   takeDamage(amount) {
+    if (this.vehicle) { this.vehicle.damage(amount); return; } // driving: hits go to the Civic
     if (!this.alive || this.invuln) return;
     if (this.auxHp > 0) { this.auxHp = Math.max(0, this.auxHp - amount); return; } // aux shield absorbs
     this.health = this.hardcore ? 0 : Math.max(0, this.health - amount);

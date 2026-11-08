@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { ENEMY, ENEMY_TYPES, WEAPON, WAVES, PLAYER, PROJECTILE, PALETTE,
-         SWARM_PACK, BOMB, WARDEN, MORTAR, PULSAR } from './config.js';
+         SWARM_PACK, BOMB, WARDEN, MORTAR, PULSAR, GUARD } from './config.js';
 import { glowSprite } from './effects.js';
 import { raycastWorld } from './raycast.js';
 import { Boss, bossTypeForWave } from './boss.js';
@@ -466,13 +466,29 @@ export class Enemies {
     if (e.damage > 0) {
       const horiz = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z);
       const vert = player.pos.y < e.pos.y + e.radius && player.pos.y + PLAYER.height > e.pos.y - e.radius;
-      if (horiz < PLAYER.radius + e.radius && vert && e.contactTimer <= 0) {
+      if (horiz < (player.hitRadius || PLAYER.radius) + e.radius && vert && e.contactTimer <= 0) {
         e.contactTimer = ENEMY.contactInterval;
-        player.takeDamage(e.damage);
-        sfx.hurt();
-        this.onPlayerHurt?.();
+        if (this._guardBlocks(player, e.pos, GUARD.meleeArc)) {
+          // Parried: no damage, shove the attacker back off the blade.
+          const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+          e.pos.x += (dx / d) * 1.4; e.pos.z += (dz / d) * 1.4;
+          this.effects.burst(e.pos.clone(), 0x7cf2ff);
+          sfx.swap();
+        } else {
+          player.takeDamage(e.damage);
+          sfx.hurt();
+          this.onPlayerHurt?.();
+        }
       }
     }
+  }
+
+  // True if the player is guarding and `srcPos` lies within the frontal guard arc.
+  _guardBlocks(player, srcPos, arc = GUARD.arcCos) {
+    if (!player.guarding) return false;
+    const dx = srcPos.x - player.pos.x, dz = srcPos.z - player.pos.z, d = Math.hypot(dx, dz);
+    if (d < 0.01) return true;
+    return (dx / d) * player.guardDir.x + (dz / d) * player.guardDir.z >= arc;
   }
 
   _updateProjectiles(dt, player) {
@@ -483,15 +499,44 @@ export class Enemies {
       p.pos.addScaledVector(p.vel, dt);
       p.group.position.copy(p.pos);
       p.life -= dt;
-      const hit = Math.hypot(p.pos.x - cx, p.pos.y - cy, p.pos.z - cz) < PLAYER.radius + PROJECTILE.radius;
-      const gone = p.life <= 0 || p.pos.y < 0 || Math.abs(p.pos.x) > h || Math.abs(p.pos.z) > h;
-      if (hit) {
-        player.takeDamage(p.damage);
-        sfx.hurt();
-        this.onPlayerHurt?.();
-        this.effects.burst(p.pos, p.group.children[0].material.color.getHex());
+      let consumed = false;
+
+      if (p.reflected) {
+        // Deflected shot: now hurts the enemies it strikes.
+        for (const e of this.list) {
+          if (Math.hypot(p.pos.x - e.pos.x, p.pos.y - e.pos.y, p.pos.z - e.pos.z) < e.radius + PROJECTILE.radius) {
+            this._damage(e, p.damage, p.pos.clone());
+            this.effects.burst(p.pos.clone(), 0x7cf2ff);
+            consumed = true; break;
+          }
+        }
+        if (!consumed && this.boss && !this.boss.dead &&
+            Math.hypot(p.pos.x - this.boss.pos.x, p.pos.y - this.boss.pos.y, p.pos.z - this.boss.pos.z) < this.boss.hitR + PROJECTILE.radius) {
+          this._damageBoss(p.damage, p.pos.clone()); consumed = true;
+        }
+      } else {
+        const dPlayer = Math.hypot(p.pos.x - cx, p.pos.y - cy, p.pos.z - cz);
+        // Guard bubble: swat frontal shots out of the air well before they land.
+        if (player.guarding && dPlayer < GUARD.reach && this._guardBlocks(player, p.pos)) {
+          // Reflect it back at the sender, re-owned by the player and stronger.
+          p.vel.negate().multiplyScalar(GUARD.reflectSpeed);
+          p.reflected = true;
+          p.damage = Math.round(p.damage * GUARD.reflectDamage);
+          p.life = PROJECTILE.life;
+          p.group.children.forEach((o) => o.material?.color?.setHex(0x7cf2ff));
+          this.effects.burst(p.pos.clone(), 0x7cf2ff);
+          sfx.swap();
+        } else if (dPlayer < (player.hitRadius || PLAYER.radius) + PROJECTILE.radius) {
+          player.takeDamage(p.damage);
+          sfx.hurt();
+          this.onPlayerHurt?.();
+          this.effects.burst(p.pos, p.group.children[0].material.color.getHex());
+          consumed = true;
+        }
       }
-      if (hit || gone) {
+
+      const gone = p.life <= 0 || p.pos.y < 0 || Math.abs(p.pos.x) > h || Math.abs(p.pos.z) > h;
+      if (consumed || gone) {
         this.scene.remove(p.group);
         p.group.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
         this.projectiles.splice(i, 1);
@@ -526,7 +571,7 @@ export class Enemies {
     }
     if (this.boss && !this.boss.dead) {
       const d = Math.hypot(this.boss.pos.x - px, this.boss.pos.y - py, this.boss.pos.z - pz);
-      if (d < radius + this.boss.hitR + 1) { hits.push(this.boss.pos.clone()); this.boss.hit(this.boss.maxHp * 0.34, this.effects); }
+      if (d < radius + this.boss.hitR + 1) { hits.push(this.boss.pos.clone()); this.boss.hit(this.boss.maxHp * 0.136, this.effects); }
     }
     if (hits.length) sfx.kill();
     return hits;

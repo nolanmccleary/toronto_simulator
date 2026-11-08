@@ -63,13 +63,14 @@ export const PLAYER = {
 };
 
 // Selectable weapons, cycled with the scroll wheel or number keys.
-// 'strap' = fast hitscan + zipline, 'slider' = portal gun, 'draco' = scoped semi-auto sniper.
-export const WEAPONS = ['strap', 'slider', 'draco'];
+// 'strap' = fast hitscan + zipline, 'draco' = scoped semi-auto sniper, 'pump' = spread shotgun.
+// 'slider' (portal gun) is parked for now — its code/assets remain; add it back here to re-enable.
+export const WEAPONS = ['strap', 'draco', 'pump'];
 
 export const WEAPON = {
   range: 200,
-  damage: 26,
-  cooldown: 0.16,     // seconds between shots
+  damage: 15,
+  cooldown: 0.246,    // seconds between shots (~30% faster than 0.32)
   // Damage falls off with distance.
   falloffStart: 18,   // full damage within this range
   falloffEnd: 62,     // minimum damage beyond this
@@ -83,6 +84,21 @@ export const DRACO = {
   scopeFov: 30,       // zoom when right-mouse is held
 };
 
+// The Pump — a spread shotgun. A fan of pellets, brutal up close, useless at range.
+// Right-click aims down: a modest zoom and a much tighter choke for reach.
+export const PUMP = {
+  pellets: 9,
+  damage: 15,         // per pellet (≈135 point-blank if every pellet lands)
+  range: 72,
+  cooldown: 0.72,     // slow pump action, semi-auto (release between shots)
+  spread: 0.1,        // hip-fire cone width of the pellet fan
+  spreadAds: 0.032,   // choked spread while aiming down (tighter = reaches further)
+  adsFov: 56,         // zoom FOV while aiming (base is 80)
+  falloffStart: 8,    // full damage only point-blank
+  falloffEnd: 28,     // ...decaying fast
+  falloffMin: 0.22,   // to a feeble long-range tickle
+};
+
 export const PORTAL = {
   radius: 1.4,
   cooldown: 0.22,       // between placements
@@ -94,7 +110,7 @@ export const PORTAL = {
 // Zipline/grapple — STRAP right-click. Latches a structure and brutally yanks you in.
 // No manual disengage: once locked you ride it to the anchor. Gravity is cut while reeling.
 export const GRAPPLE = {
-  range: 95,
+  range: 55,
   pull: 110,      // hard yank acceleration
   maxSpeed: 46,   // cap while reeling
   minSpeed: 22,   // always moving at least this fast toward the anchor
@@ -165,10 +181,44 @@ export const POWER = {
 };
 export const JET = { fuelMax: 2.4, thrust: 34, maxRise: 10, drain: 1.0, refill: 0.75 };
 
+// Brampton Berserker — an impounded Honda Civic you can drive and ram with.
+// Persists in the world when you step out (press E); re-enter to resume at the same HP.
+// When its HP hits zero it detonates ("CIVIC REPOSSESSED") for big area damage.
+export const CIVIC = {
+  hp: 130,
+  radius: 1.45,          // tighter body: slips through gaps instead of wedging
+  rideMax: 1.9,          // drives over all the low cover/blocks; only real towers stop it
+  clearance: 2.4,        // roof height: drives UNDER anything whose underside is above this (arch lintels, bridge decks)
+  accel: 42,             // punchy throttle
+  maxSpeed: 29,          // ~3.4x run speed
+  maxReverse: 12,
+  drag: 0.65,            // lighter velocity damping (less sluggish)
+  coast: 1.5,            // gentler coast-down
+  brake: 3.4,            // S while rolling forward brakes harder
+  turnRate: 2.7,         // rad/sec steering (scaled by speed)
+  ramBase: 36,           // ram damage floor...
+  ramPerSpeed: 2.4,      // ...plus this per unit of speed
+  ramMinSpeed: 3,        // below this you just nudge
+  ramCd: 0.25,           // per-enemy ram re-hit interval
+  explodeRadius: 13,
+  explodeDamage: 150,
+  color: 0xff4d4d,       // impound red
+};
+
+// Katana guard (Somali mode, hold right-click): parries frontal melee + reflects
+// projectiles within this frontal arc back at the enemies.
+export const GUARD = {
+  arcCos: 0.2,         // dot threshold ≈ 78° half-arc (≈156° total frontal cover)
+  reach: 3.4,          // guard bubble: intercept frontal projectiles within this radius
+  meleeArc: 0.1,       // slightly wider arc for parrying melee lunges (≈84° half)
+  reflectSpeed: 1.4,   // deflected projectiles fly back a bit faster
+  reflectDamage: 1.6,  // ...and hit harder than the enemy's own shot
+};
+
 // Night Yute arsenal: left = Gat, right = lock-on guided missiles.
 export const GATLING = { cooldown: 0.055, damage: 15, range: 220, spread: 0.012, color: 0xffe08a };
 export const MISSILE = {
-  lockTime: 1.05,   // slower to lock (and thus slower cadence)
+  lockTime: 0.7,    // 1.5x faster lock (and thus faster cadence)
   speed: 34,
   turn: 4.5,        // limited turn radius → it arcs, can't snap
   loft: 4.5,        // aims this far above the target when far, so it flies over cover
@@ -194,19 +244,19 @@ export const HAZARD = {
   activePerWave: 0.18,   // shrinks each round → the portal window tightens
   activeMin: 1.2,
   fadeTime: 0.4,
-  interval: 2.6,         // base seconds between spawns (near-constant presence)
-  intervalMin: 1.2,
-  intervalPerWave: 0.12,
+  interval: 4.6,         // base seconds between spawns (occasional, not constant)
+  intervalMin: 2.6,
+  intervalPerWave: 0.1,
   damage: 20,
   tickInterval: 0.45,
   safeHeight: 3.0,       // standing above this (on a platform) is safe from spikes
 
-  // Spawn close to the player so camping doesn't work.
-  nearMin: 5,
-  nearMax: 13,
+  // Spawn near-ish the player (anti-camp) but not right on top of them.
+  nearMin: 9,
+  nearMax: 22,
 
   // Flame (wall) hazards.
-  flameChance: 0.5,      // fraction of spawns that are flames
+  flameChance: 0.45,     // fraction of spawns that are flames
   flameRadius: 3.1,
   flameReach: 4.8,       // how far flames jet out of the wall
 };
