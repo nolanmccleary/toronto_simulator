@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, PUMP, GATLING, MISSILE, POWER, JET, CIVIC, PLAYER } from './config.js';
+import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, PUMP, GATLING, MISSILE, POWER, JET, CIVIC, NECRO, PLAYER } from './config.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemies } from './enemies.js';
@@ -9,10 +9,12 @@ import { Hazards } from './hazards.js';
 import { Pickups } from './pickups.js';
 import { Powerups } from './powerups.js';
 import { Civic } from './civic.js';
+import { Allies } from './allies.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
 import { raycastWorld } from './raycast.js';
 import { initAudio, sfx, toggleMute } from './audio.js';
+import { accountUI } from './accountUI.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -32,7 +34,11 @@ const hazards = new Hazards(scene, effects);
 const pickups = new Pickups(scene, effects);
 const powerups = new Powerups(scene, effects);
 const civic = new Civic(scene, effects);
+const allies = new Allies(scene, effects);
+allies.bind(world);
 enemies.bind(world);
+enemies.bindAllies(allies);
+enemies.onReanimate = (data) => allies.reanimate(data); // dagger kills join the horde
 hazards.bind(world);
 pickups.bind(world);
 powerups.bind(world);
@@ -40,7 +46,7 @@ player.portals = portals;
 const input = new Input(renderer.domElement);
 const hud = new HUD();
 
-enemies.onWaveStart = (n) => { world.regenerate(player.pos); portals.reset(); player.releaseGrapple(); hud.showBanner('WAVE ' + n); };
+enemies.onWaveStart = (n) => { world.regenerate(player.pos); player.settleToGround(world); portals.reset(); player.releaseGrapple(); hud.showBanner('WAVE ' + n); };
 enemies.onPlayerHurt = () => hud.flashDamage();
 enemies.onBoss = (name) => { hud.showBanner('⚠ BOSSMAN ALERT', 2.6); sfx.over(); };
 enemies.onKill = (pos) => { if (power === 'nightyute') wasted.push({ pos: pos.clone(), t: 0 }); }; // "WASTED" marker (Night Yute HUD only)
@@ -65,6 +71,11 @@ let powerPermanent = false;      // invoked from /console → infinite + indefin
 let powerSnapshot = 100;         // health to restore on revert
 let swingCd = 0;
 let kTaps = 0, kTapTimer = 0;    // 6 K-taps to tap out of a /console-invoked mode
+
+// neCROmancer state
+let necroCharge = 0;             // 0..1 summon bar
+let summonProgress = 0;          // 0..1 while holding E to raise a GOLUMN
+let daggerCd = 0, hexPrev = false;
 let consoleOpen = false;
 const wasted = [];               // transient "WASTED" markers {pos, t}
 const _proj = new THREE.Vector3();
@@ -130,6 +141,65 @@ const gatBarrels = new THREE.Group();
   gatling.visible = false;
   camera.add(gatling);
 })();
+
+// neCROmancer ceremonial dagger (viewmodel) — small blade, lower-right.
+const dagger = new THREE.Group();
+(() => {
+  const bg = new THREE.BoxGeometry(0.035, 0.42, 0.06);
+  const blade = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: 0xcdbbff })); blade.position.y = 0.3;
+  const bladeE = new THREE.LineSegments(new THREE.EdgesGeometry(bg), new THREE.LineBasicMaterial({ color: NECRO.color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending })); bladeE.position.y = 0.3;
+  const gd = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.06), new THREE.MeshBasicMaterial({ color: 0x1a1222 })); gd.position.y = 0.08;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.16, 0.045), new THREE.MeshBasicMaterial({ color: 0x120a16 }));
+  dagger.add(blade, bladeE, gd, grip, glowSprite(effects.glowTex, NECRO.color, 0.9));
+  dagger.visible = false; camera.add(dagger);
+})();
+const daggerState = { swinging: false, t: 0, idleT: 0 };
+// Reverse (icepick) grip held point-forward, then a fast straight thrust — not a swing.
+const GPOSE = {
+  idle:   { p: [0.34, -0.42, -0.6],  r: [-1.0, 0.22, 0.15] },
+  back:   { p: [0.4, -0.44, -0.48],  r: [-0.82, 0.32, 0.22] }, // small cock back
+  thrust: { p: [0.14, -0.34, -1.12], r: [-1.4, 0.06, 0.03] },  // punch forward (−z)
+};
+function applyDagger(a, b, t) {
+  dagger.position.set(a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t);
+  dagger.rotation.set(a.r[0] + (b.r[0] - a.r[0]) * t, a.r[1] + (b.r[1] - a.r[1]) * t, a.r[2] + (b.r[2] - a.r[2]) * t);
+}
+function animateDagger(dt) {
+  if (!daggerState.swinging) { daggerState.idleT += dt; applyDagger(GPOSE.idle, GPOSE.idle, 0); dagger.position.y += Math.sin(daggerState.idleT * 2) * 0.012; return; }
+  const T = (daggerState.t += dt);
+  if (T < 0.06) applyDagger(GPOSE.idle, GPOSE.back, T / 0.06);                                 // cock back
+  else if (T < 0.14) applyDagger(GPOSE.back, GPOSE.thrust, 1 - Math.pow(1 - (T - 0.06) / 0.08, 3)); // snap forward
+  else if (T < 0.3) applyDagger(GPOSE.thrust, GPOSE.idle, (T - 0.14) / 0.16);                  // retract
+  else daggerState.swinging = false;
+}
+
+// Summoning hands — both hands up doing the "6-7" weighing motion during the GOLUMN cast.
+function makeNecroHand() {
+  const g = new THREE.Group();
+  const palmGeo = new THREE.BoxGeometry(0.16, 0.2, 0.1);
+  g.add(new THREE.Mesh(palmGeo, new THREE.MeshBasicMaterial({ color: 0x14101c })));
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(palmGeo), new THREE.LineBasicMaterial({ color: NECRO.color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })));
+  for (let f = 0; f < 4; f++) {
+    const fg = new THREE.BoxGeometry(0.03, 0.12, 0.03);
+    const fm = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: 0x14101c })); fm.position.set(-0.05 + f * 0.033, 0.15, 0.02);
+    const fe = new THREE.LineSegments(new THREE.EdgesGeometry(fg), new THREE.LineBasicMaterial({ color: NECRO.color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending })); fe.position.copy(fm.position);
+    g.add(fm, fe);
+  }
+  g.add(glowSprite(effects.glowTex, NECRO.color, 0.9));
+  return g;
+}
+const necroHands = new THREE.Group();
+const handL = makeNecroHand(), handR = makeNecroHand();
+handL.position.set(-0.34, -0.52, -0.68); handR.position.set(0.34, -0.52, -0.68);
+necroHands.add(handL, handR); necroHands.visible = false; necroHands._t = 0; camera.add(necroHands);
+function animateNecroHands(dt, active) {
+  necroHands.visible = active;
+  if (!active) return;
+  necroHands._t += dt;
+  const s = Math.sin(necroHands._t * 9);
+  handL.position.y = -0.5 + s * 0.09; handR.position.y = -0.5 - s * 0.09; // 6 … 7 … 6 … 7
+  handL.rotation.z = s * 0.3; handR.rotation.z = -s * 0.3;
+}
 
 // --- Held weapon viewmodels (Strap / Draco / Pump), lower-right, barrel toward -z ---
 // Minimal neon-edged geometry, same visual language as the katana & Gat. Only the
@@ -405,22 +475,26 @@ function tryGrapple() {
 // --- Power modes ---
 // permanent (from /console) = infinite HP + indefinite; otherwise aux-HP package mode.
 function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
-  if (power) return;
+  if (power || driving) return;
   power = kind; powerPermanent = permanent; powerSnapshot = player.health;
   player.invuln = permanent;                 // console = infinite; package = aux shield
   player.auxHp = permanent ? 0 : aux;
   player.scopeFov = null;
   if (kind === 'somali') {
     player.speedMul = POWER.somaliSpeed; player.flySpeedMul = POWER.somaliSpeed; player.jetpackEnabled = false;
-  } else {
+  } else if (kind === 'nightyute') {
     player.speedMul = POWER.nightGroundSpeed; player.flySpeedMul = POWER.nightFlySpeed;
     player.jetpackEnabled = true; player.fuel = JET.fuelMax;
+  } else { // necro
+    player.speedMul = NECRO.speed; player.flySpeedMul = NECRO.speed; player.jetpackEnabled = false;
+    allies.reset(); necroCharge = 0; summonProgress = 0; daggerState.swinging = false;
   }
   katana.visible = (kind === 'somali');
   gatling.visible = (kind === 'nightyute');
+  dagger.visible = (kind === 'necro');
   updateGunVisibility(); // hide the held gun while a power mode is active
   hud.setPowerMode(kind);
-  hud.showBanner(kind === 'somali' ? 'WALLAHI MODE ACTIVATED' : 'XM01-NIGHT YUTE', 2.4);
+  hud.showBanner(kind === 'somali' ? 'WALLAHI MODE ACTIVATED' : kind === 'nightyute' ? 'NIGHT YUTE ONLINE' : 'neCROmancer SUMMONED', 2.4);
   sfx.wave();
 }
 function disengagePower() {
@@ -429,8 +503,8 @@ function disengagePower() {
   player.invuln = false; player.auxHp = 0;
   player.speedMul = 1; player.flySpeedMul = 1; player.jetpackEnabled = false; player.flying = false;
   player.guarding = false;
-  katana.visible = false; gatling.visible = false; katanaState.swinging = false;
-  clearDrizzy();
+  katana.visible = false; gatling.visible = false; dagger.visible = false; katanaState.swinging = false;
+  clearDrizzy(); clearNecro();
   player.health = Math.min(PLAYER.maxHealth, powerSnapshot); // save as before
   wasted.length = 0; kTaps = 0;
   hud.setPowerMode(null);
@@ -441,10 +515,18 @@ function resetPower() {
   power = null; powerPermanent = false; swingCd = 0; kTaps = 0; wasted.length = 0;
   player.invuln = false; player.auxHp = 0; player.speedMul = 1; player.flySpeedMul = 1;
   player.jetpackEnabled = false; player.flying = false; player.guarding = false;
-  katana.visible = false; gatling.visible = false; katanaState.swinging = false;
-  clearDrizzy();
+  katana.visible = false; gatling.visible = false; dagger.visible = false; katanaState.swinging = false;
+  clearDrizzy(); clearNecro();
   updateGunVisibility();
   hud.setPowerMode(null);
+}
+
+// Dismiss the whole horde + necro viewmodels/state.
+function clearNecro() {
+  allies.reset();
+  necroCharge = 0; summonProgress = 0; daggerState.swinging = false;
+  necroHands.visible = false;
+  player.frozen = false;
 }
 
 // --- Brampton Berserker (impounded Civic) ---
@@ -520,8 +602,46 @@ function animateKatana(dt) {
 
 function powerUpdate(dt) {
   if (power === 'somali') somaliWeapons(dt);
-  else nightyuteWeapons(dt);
+  else if (power === 'nightyute') nightyuteWeapons(dt);
+  else if (power === 'necro') necroWeapons(dt);
   for (let i = wasted.length - 1; i >= 0; i--) { wasted[i].t += dt; if (wasted[i].t > 0.6) wasted.splice(i, 1); }
+}
+
+// neCROmancer: dagger (left, reanimates kills), hex (right, focus-fire the horde),
+// a summon bar → hold E to raise a GOLUMN while the hands do the 6-7.
+function necroWeapons(dt) {
+  daggerCd -= dt;
+  const summoning = summonProgress > 0;
+  if (input.firing && daggerCd <= 0 && !summoning) {
+    daggerCd = NECRO.dagger.cooldown;
+    daggerState.swinging = true; daggerState.t = 0;
+    enemies.daggerSweep(player, NECRO.dagger.range, NECRO.dagger.damage);
+  }
+  // right-click hexes the aimed enemy — the horde focus-fires it
+  const hexEdge = input.firing2 && !hexPrev; hexPrev = input.firing2;
+  if (hexEdge) {
+    const tgt = enemies.lockTarget(player.getRay(), NECRO.hexCone);
+    if (tgt && tgt !== enemies.boss && player.pos.distanceTo(tgt.pos) < NECRO.hexRange) { allies.setHex(tgt); sfx.lock(); }
+  }
+  // summon bar fills; hold E when full to cast
+  const casting = necroCharge >= 1 && input.down('KeyE');
+  if (necroCharge < 1) necroCharge = Math.min(1, necroCharge + dt / NECRO.charge);
+  if (casting) {
+    summonProgress += dt / NECRO.summonHold;
+    if (summonProgress >= 1) {
+      allies.summonGolumn(player.pos.clone().addScaledVector(player._fwd, 4.5));
+      necroCharge = 0; summonProgress = 0;
+      hud.showBanner('CRODIE SUMMONED', 2.0); sfx.over();
+    }
+  } else if (summonProgress > 0) {
+    summonProgress = Math.max(0, summonProgress - dt * 2.5); // released early → recedes
+  }
+  const showHands = summonProgress > 0;
+  player.frozen = showHands;        // rooted while summoning — no run or jump
+  dagger.visible = !showHands;
+  animateDagger(dt);
+  animateNecroHands(dt, showHands);
+  allies.update(dt, enemies, player, worldTime);
 }
 
 // Somali Samurai: Sauga Sabre. Left-click swings; hold right-click to raise a
@@ -693,6 +813,7 @@ function gameOver() {
   input.exitLock();
   sfx.over();
   hud.showGameOver(true, enemies.score, enemies.wave);
+  accountUI.reportScore(enemies.score, enemies.wave); // posts the run if logged in
 }
 
 input.onLockChange((locked) => {
@@ -767,16 +888,20 @@ function parseMode(s) {
   if (/somali|samurai|wallahi/.test(s)) return 'somali';
   if (/yute|drizzy|xm01|night/.test(s)) return 'nightyute';
   if (/brampton|berserker|civic|honda/.test(s)) return 'civic';
+  if (/necro|cromancer|summon|golum|gollum/.test(s)) return 'necro';
   return null;
 }
 const consoleInput = document.getElementById('console-input');
 consoleInput.addEventListener('keydown', (e) => {
   e.stopPropagation();
   if (e.code === 'Enter') {
-    const mode = parseMode(consoleInput.value);
+    const raw = consoleInput.value.trim();
+    const mode = parseMode(raw);
+    const normal = /1\s*$/.test(raw); // trailing "1" → normal mortal version instead of infinite
+    const opts = normal ? { permanent: false, aux: POWER.auxHp } : { permanent: true };
     consoleInput.value = ''; closeConsole();
-    if (mode === 'civic') { if (!power && !driving) spawnAndDrive(player.pos.clone(), player.yaw, { permanent: true }); }
-    else if (mode) engagePower(mode, { permanent: true });
+    if (mode === 'civic') { if (!power && !driving) spawnAndDrive(player.pos.clone(), player.yaw, opts); }
+    else if (mode) engagePower(mode, opts);
     state = 'paused'; hud.setStartMode('paused'); hud.showStart(true); // pointer-lock lost → resume overlay
   } else if (e.code === 'Escape') {
     consoleInput.value = ''; closeConsole();
@@ -878,6 +1003,7 @@ function loop() {
     hud.setPortalStatus(!power && !driving && WEAPONS[weapon] === 'slider', portals.a.active, portals.b.active);
     if (driving) hud.setCivicHealth(civic.invincible ? Infinity : civic.hp, civic.maxHp);
     else hud.setPowerStatus(power, powerPermanent ? Infinity : player.auxHp, POWER.auxHp, player.jetpackEnabled ? player.fuel / JET.fuelMax : -1);
+    hud.setNecro(power === 'necro', necroCharge, summonProgress, allies.count);
 
     if (!player.alive) gameOver();
   }
@@ -891,15 +1017,17 @@ function loop() {
 
 hud.setHealth(PLAYER.maxHealth, PLAYER.maxHealth);
 hud.setWeapon(WEAPONS[0]);
+accountUI.init(); // account forms + leaderboard
 
 // Dev-only inspection hook (inert without ?dev in the URL). Used for automated testing.
 if (new URLSearchParams(location.search).has('dev')) {
   window.__t = {
     THREE, player, enemies, world, portals, hazards, pickups, powerups, effects, camera, scene, input, raycastWorld, GRAPPLE, katana,
     beginPlay, fireStrap, fireDraco, firePump, firePortal, setWeapon, engagePower, disengagePower, fireGatling, fireMissile, gatling, guns,
-    civic, spawnAndDrive, enterCivic, exitCivic, explodeCivic,
+    civic, spawnAndDrive, enterCivic, exitCivic, explodeCivic, allies,
     get state() { return state; }, set state(v) { state = v; },
     get driving() { return driving; },
+    get necroCharge() { return necroCharge; }, set necroCharge(v) { necroCharge = v; },
     get weapon() { return weapon; },
     get power() { return power; },
     get powerPermanent() { return powerPermanent; },

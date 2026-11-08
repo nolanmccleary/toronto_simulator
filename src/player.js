@@ -46,6 +46,7 @@ export class Player {
     this.guardDir = this.guardDir || new THREE.Vector3();   // horizontal facing held while guarding
     this.vehicle = null;                                    // Civic while driving: redirects takeDamage
     this.hitRadius = PLAYER.radius;                         // enemy-contact/projectile radius (grows while driving)
+    this.frozen = false;                                    // rooted (no run/jump) while summoning a GOLUMN
 
     // jump feel
     this.coyote = 0; this.jumpBuf = 0;
@@ -88,6 +89,16 @@ export class Player {
     return { origin: this.camera.position.clone(), dir };
   }
 
+  // On wave regen the old structures sink away (their colliders are gone instantly). If the
+  // player was perched on one, set them on the new ground at their spot instead of dropping
+  // them through the sinking visual.
+  settleToGround(world) {
+    if (this.pos.y <= 0.2) return;
+    this.pos.y = world.terrainHeight(this.pos.x, this.pos.z);
+    this.vel.y = 0; this.grounded = true; this._jumpActive = false; this.flying = false;
+    this._syncCamera();
+  }
+
   addFovKick(n) { this.fovBoost = Math.max(this.fovBoost, n); }
 
   startGrapple(point) { this.grapple.active = true; this.grapple.point.copy(point); this._grappleT = 0; this.addFovKick(9); }
@@ -115,13 +126,13 @@ export class Player {
     this._basis();
 
     // --- Intent ---
-    const m = input.moveAxis();
+    const m = this.frozen ? { x: 0, z: 0 } : input.moveAxis(); // rooted while summoning
     const hasInput = m.x !== 0 || m.z !== 0;
     const wish = new THREE.Vector3().addScaledVector(this._fwd, m.z).addScaledVector(this._right, m.x);
     if (wish.lengthSq() > 1) wish.normalize();
 
     // --- Jump timers (coyote + buffer + variable height) ---
-    const spaceDown = input.down('Space');
+    const spaceDown = input.down('Space') && !this.frozen; // no jump while summoning
     const pressEdge = spaceDown && !this._spaceWas;
     this._spaceWas = spaceDown;
     if (this.jumpBuf > 0) this.jumpBuf -= dt;

@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { ENEMY, ENEMY_TYPES, WEAPON, WAVES, PLAYER, PROJECTILE, PALETTE,
-         SWARM_PACK, BOMB, WARDEN, MORTAR, PULSAR, GUARD } from './config.js';
+         SWARM_PACK, BOMB, WARDEN, MORTAR, PULSAR, GUARD, NECRO } from './config.js';
 import { glowSprite } from './effects.js';
 import { raycastWorld } from './raycast.js';
 import { Boss, bossTypeForWave } from './boss.js';
@@ -13,7 +13,8 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _tmp = new THREE.Vector3();
 
 // Each enemy type gets a distinct, animated composite silhouette.
-function buildModel(key, def, glowTex) {
+// Exported so reanimated allies can reuse the same shapes with a friendly tint.
+export function buildModel(key, def, glowTex) {
   const r = def.radius;
   const g = new THREE.Group();
   const fill = () => new THREE.MeshBasicMaterial({ color: 0x140810 });
@@ -180,6 +181,8 @@ export class Enemies {
     this.onPlayerHurt = null;
     this.onBoss = null;       // (name) => void, when a bossman spawns
     this.onKill = null;       // (pos) => void, when the player destroys an enemy
+    this.onReanimate = null;  // (data) => void, when the necro dagger kills an enemy
+    this.allies = null;       // Allies manager (set in necro mode); enemies fight these too
     this.reset();
   }
 
@@ -202,6 +205,22 @@ export class Enemies {
   }
 
   bind(world) { this.world = world; }
+  bindAllies(allies) { this.allies = allies; }
+
+  // The hostile an enemy fights: the player by default, or a nearby ally if one is
+  // closer (the player is slightly preferred so enemies still press toward you).
+  _threat(e, player) {
+    let best = { pos: player.pos, hostile: player, radius: player.hitRadius || PLAYER.radius };
+    const allies = this.allies;
+    if (allies && allies.list.length) {
+      let bd = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) * NECRO.playerBias;
+      for (const a of allies.list) {
+        const d = Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z);
+        if (d < bd && d < NECRO.enemyAggroAlly) { bd = d; best = { pos: a.pos, hostile: a, radius: a.radius }; }
+      }
+    }
+    return best;
+  }
 
   get remaining() { return this.toSpawn + this.list.length + (this.bossAlive ? 1 : 0); }
   get bossAlive() { return !!this.boss && !this.boss.dead; }
@@ -288,6 +307,9 @@ export class Enemies {
         if (Math.hypot(player.pos.x - s.x, player.pos.z - s.z) < MORTAR.radius && player.pos.y < 3) {
           player.takeDamage(MORTAR.damage); this.onPlayerHurt?.();
         }
+        if (this.allies) for (const a of this.allies.list) {
+          if (Math.hypot(a.pos.x - s.x, a.pos.z - s.z) < MORTAR.radius) a.takeDamage(MORTAR.damage);
+        }
         this.strikes.splice(i, 1);
       }
     }
@@ -314,7 +336,10 @@ export class Enemies {
     this.effects.burst(e.pos, e.color);
     if (player) {
       const d = Math.hypot(player.pos.x - e.pos.x, (player.pos.y + PLAYER.height * 0.5) - e.pos.y, player.pos.z - e.pos.z);
-      if (d < BOMB.radius + PLAYER.radius) { player.takeDamage(BOMB.damage); this.onPlayerHurt?.(); }
+      if (d < BOMB.radius + (player.hitRadius || PLAYER.radius)) { player.takeDamage(BOMB.damage); this.onPlayerHurt?.(); }
+    }
+    if (this.allies) for (const a of this.allies.list) { // bombs catch the horde too
+      if (Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z) < BOMB.radius + a.radius) a.takeDamage(BOMB.damage);
     }
     if (byPlayer) this.onKill?.(e.pos);
     e.dispose();
@@ -357,8 +382,10 @@ export class Enemies {
   }
 
   _updateEnemy(e, dt, player) {
-    const dx = player.pos.x - e.pos.x;
-    const dz = player.pos.z - e.pos.z;
+    const tgt = this._threat(e, player);       // player, or a nearby ally
+    const tp = tgt.pos;
+    const dx = tp.x - e.pos.x;
+    const dz = tp.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1;
     const nx = dx / d, nz = dz / d;
 
@@ -373,14 +400,14 @@ export class Enemies {
       if (b === 'ranged') {
         e.shootTimer -= dt;
         if (e.shootTimer <= 0 && d < 46) {
-          const target = new THREE.Vector3(player.pos.x, player.pos.y + PLAYER.height * 0.5, player.pos.z);
+          const target = new THREE.Vector3(tp.x, (tp.y || 0) + PLAYER.height * 0.5, tp.z);
           this._spawnProjectile(e.pos.clone(), target, def.projSpeed, def.projDamage, e.color);
           e.shootTimer = def.shootInterval * (0.8 + Math.random() * 0.5);
         }
-      } else { // mortar — lob a telegraphed AoE strike at the player's feet
+      } else { // mortar — lob a telegraphed AoE strike at the target's feet
         e.fireTimer -= dt;
         if (e.fireTimer <= 0 && d < MORTAR.range) {
-          this._spawnStrike(player.pos.x, player.pos.z, e.color);
+          this._spawnStrike(tp.x, tp.z, e.color);
           e.fireTimer = MORTAR.interval * (0.85 + Math.random() * 0.3);
           sfx.eshoot();
         }
@@ -405,8 +432,9 @@ export class Enemies {
       e.pulseTimer -= dt;
       if (e.pulseTimer <= 0) {
         this.effects.groundRing(e.pos.clone(), e.color, PULSAR.radius, 0.5);
-        if (Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) < PULSAR.radius && player.pos.y < 3) {
-          player.takeDamage(PULSAR.damage); this.onPlayerHurt?.();
+        const h = tgt.hostile, hp = h.pos;
+        if (Math.hypot(hp.x - e.pos.x, hp.z - e.pos.z) < PULSAR.radius && (hp.y || 0) < 3) {
+          h.takeDamage(PULSAR.damage); if (h === player) this.onPlayerHurt?.();
         }
         e.pulseTimer = PULSAR.interval;
       }
@@ -423,8 +451,8 @@ export class Enemies {
           const ang = Math.random() * Math.PI * 2;
           const rad = e.def.blinkRange * (0.5 + Math.random() * 0.5);
           this.effects.burst(e.pos, e.color);
-          e.pos.x = Math.max(-h, Math.min(h, player.pos.x + Math.cos(ang) * rad));
-          e.pos.z = Math.max(-h, Math.min(h, player.pos.z + Math.sin(ang) * rad));
+          e.pos.x = Math.max(-h, Math.min(h, tp.x + Math.cos(ang) * rad));
+          e.pos.z = Math.max(-h, Math.min(h, tp.z + Math.sin(ang) * rad));
           this.effects.burst(e.pos, e.color);
           e.blinkTimer = e.def.blinkInterval * (0.8 + Math.random() * 0.5);
           sfx.blink();
@@ -461,23 +489,26 @@ export class Enemies {
     e.group.position.set(e.pos.x, e.pos.y + Math.sin(e.bob * 3) * 0.14, e.pos.z);
     e.animateModel(dt, e, { x: nx, z: nz });
 
-    // Contact damage (needs horizontal proximity AND vertical overlap).
+    // Contact damage against the current threat (player or an ally).
     if (e.contactTimer > 0) e.contactTimer -= dt;
     if (e.damage > 0) {
-      const horiz = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z);
-      const vert = player.pos.y < e.pos.y + e.radius && player.pos.y + PLAYER.height > e.pos.y - e.radius;
-      if (horiz < (player.hitRadius || PLAYER.radius) + e.radius && vert && e.contactTimer <= 0) {
+      const h = tgt.hostile, hp = h.pos;
+      const horiz = Math.hypot(hp.x - e.pos.x, hp.z - e.pos.z);
+      const vert = h === player
+        ? (player.pos.y < e.pos.y + e.radius && player.pos.y + PLAYER.height > e.pos.y - e.radius)
+        : Math.abs((hp.y || 0) - e.pos.y) < e.radius + (tgt.radius || 1) + 1.5;
+      if (horiz < (tgt.radius || 0.6) + e.radius && vert && e.contactTimer <= 0) {
         e.contactTimer = ENEMY.contactInterval;
-        if (this._guardBlocks(player, e.pos, GUARD.meleeArc)) {
+        if (h === player && this._guardBlocks(player, e.pos, GUARD.meleeArc)) {
           // Parried: no damage, shove the attacker back off the blade.
           const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
           e.pos.x += (dx / d) * 1.4; e.pos.z += (dz / d) * 1.4;
           this.effects.burst(e.pos.clone(), 0x7cf2ff);
           sfx.swap();
         } else {
-          player.takeDamage(e.damage);
-          sfx.hurt();
-          this.onPlayerHurt?.();
+          h.takeDamage(e.damage);
+          if (h === player) { sfx.hurt(); this.onPlayerHurt?.(); }
+          else this.effects.burst(e.pos.clone(), e.color);
         }
       }
     }
@@ -532,6 +563,14 @@ export class Enemies {
           this.onPlayerHurt?.();
           this.effects.burst(p.pos, p.group.children[0].material.color.getHex());
           consumed = true;
+        } else if (this.allies) { // enemy shots also hit the horde
+          for (const a of this.allies.list) {
+            if (Math.hypot(p.pos.x - a.pos.x, p.pos.y - a.pos.y, p.pos.z - a.pos.z) < a.radius + PROJECTILE.radius) {
+              a.takeDamage(p.damage);
+              this.effects.burst(p.pos.clone(), p.group.children[0].material.color.getHex());
+              consumed = true; break;
+            }
+          }
         }
       }
 
@@ -575,6 +614,35 @@ export class Enemies {
     }
     if (hits.length) sfx.kill();
     return hits;
+  }
+
+  // neCROmancer dagger: short, weak melee. Any enemy it finishes is reanimated as an ally.
+  daggerSweep(player, radius, damage) {
+    const px = player.pos.x, py = player.pos.y + PLAYER.height * 0.5, pz = player.pos.z;
+    let hit = false;
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const e = this.list[i];
+      if (Math.hypot(e.pos.x - px, e.pos.y - py, e.pos.z - pz) < radius + e.radius) {
+        hit = true;
+        e.hp -= damage * (1 - (e.shield || 0));
+        if (e.hp <= 0) {
+          this.onReanimate?.({ type: e.type, def: e.def, pos: e.pos.clone(), color: e.color, maxHp: e.maxHp, radius: e.radius, damage: e.damage });
+          this._remove(e); // reanimated, not destroyed — no score/charge
+        } else { this.effects.muzzle(e.pos.clone(), NECRO.allyColor); sfx.hit(); }
+      }
+    }
+    if (this.boss && !this.boss.dead) {
+      const d = Math.hypot(this.boss.pos.x - px, this.boss.pos.y - py, this.boss.pos.z - pz);
+      if (d < radius + this.boss.hitR + 1) { this.boss.hit(damage, this.effects); hit = true; }
+    }
+    if (hit) sfx.slice();
+    return hit;
+  }
+
+  _remove(e) {
+    e.dispose();
+    const i = this.list.indexOf(e);
+    if (i >= 0) this.list.splice(i, 1);
   }
 
   _bossHitT(ray) {

@@ -40,6 +40,10 @@ export class HUD {
     this.fuelWrap = this.$('fuel-wrap');
     this.fuelFill = this.$('fuel-fill');
     this.somaliText = this.$('somali-text');
+    this.necroWrap = this.$('necro-wrap');
+    this.necroLabel = this.$('necro-label');
+    this.necroFill = this.$('necro-fill');
+    this.necroCount = this.$('necro-count');
     this.prompt = this.$('prompt');
     this.consoleEl = this.$('console');
     this.consoleInput = this.$('console-input');
@@ -96,21 +100,35 @@ export class HUD {
   }
 
   setPowerMode(kind) {
-    // kind: null | 'somali' | 'nightyute'
+    // kind: null | 'somali' | 'nightyute' | 'necro'
     const night = kind === 'nightyute';
+    const necro = kind === 'necro';
     this.seered.style.display = kind === 'somali' ? 'block' : 'none'; // only Somali Samurai sees red
     this.jethud.style.display = night ? 'block' : 'none';  // only Night Yute keeps the jet HUD
     this.targets.style.display = night ? 'block' : 'none';
     this.somaliText.style.display = kind === 'somali' ? 'flex' : 'none';
     if (kind) {
-      this.weaponName.textContent = night ? 'XM01-NIGHT YUTE' : 'SAUGA SABRE';
+      this.weaponName.textContent = night ? 'XM01-NIGHT YUTE' : necro ? 'SHAWARMA KNIFE' : 'SAUGA SABRE';
       this.portalDots.style.display = 'none';
-      this.crosshair.style.display = 'none';
+      this.crosshair.style.display = necro ? 'block' : 'none'; // necro aims the hex
       if (night) this.jetStatus.textContent = '● NIGHT YUTE · GAT + MISSILES';
     } else {
       this.updateTargets([]);
       this.lock.style.display = 'none';
     }
+    if (!necro) this.setNecro(false);
+  }
+
+  // neCROmancer summon bar: charge (green when full), or the hold-E cast (purple).
+  setNecro(on, chargeFrac = 0, summonFrac = 0, allyCount = 0) {
+    if (!on) { this.necroWrap.style.display = 'none'; return; }
+    this.necroWrap.style.display = 'block';
+    const casting = summonFrac > 0;
+    const frac = casting ? summonFrac : chargeFrac;
+    this.necroFill.style.width = Math.max(0, Math.min(1, frac)) * 100 + '%';
+    this.necroFill.style.background = casting ? '#b57cff' : (chargeFrac >= 1 ? '#56ff9e' : '#9b5cff');
+    this.necroLabel.textContent = casting ? 'SUMMONING GOLUMN…' : chargeFrac >= 1 ? 'HOLD E — SUMMON GOLUMN' : 'SUMMON CHARGE';
+    this.necroCount.textContent = allyCount > 0 ? `MANDEMS ${allyCount}` : '';
   }
 
   showPrompt(mode) {
@@ -120,6 +138,7 @@ export class HUD {
       : mode === 'nightyute' ? 'XM01-NIGHT YUTE'
       : mode === 'civic' ? 'DRIVE IMPOUNDED HONDA CIVIC'
       : mode === 'civic-enter' ? 'BACK IN THE CIVIC'
+      : mode === 'necro' ? 'SUMMON neCROmancer'
       : mode;
     this.prompt.innerHTML = 'PRESS <b>E</b> — ' + label;
   }

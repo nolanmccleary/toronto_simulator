@@ -2,8 +2,8 @@ import * as THREE from '../vendor/three.module.js';
 import { glowSprite } from './effects.js';
 
 // Power-mode packages that appear one-at-a-time on the ground. Stand near one and press 6.
-const MODES = ['somali', 'nightyute', 'civic'];
-const COLORS = { somali: 0xff3b3b, nightyute: 0x5ad6ff, civic: 0xff8c2a };
+const MODES = ['somali', 'nightyute', 'civic', 'necro'];
+const COLORS = { somali: 0xff3b3b, nightyute: 0x5ad6ff, civic: 0xff8c2a, necro: 0x9b5cff };
 const CFG = { radius: 2.8, life: 22, respawn: 8, respawnVar: 6, first: 6 };
 
 export class Powerups {
@@ -65,12 +65,9 @@ export class Powerups {
       if (canSpawn) {
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
-          // pick the next allowed mode (skip any that are blocked, e.g. a Civic already in the world)
-          let mode = null;
-          for (let i = 0; i < MODES.length; i++) {
-            const cand = MODES[(this.next + i) % MODES.length];
-            if (!blocked || !blocked.includes(cand)) { mode = cand; this.next = this.next + i + 1; break; }
-          }
+          // pick a random allowed mode (skip any blocked, e.g. a Civic already in the world)
+          const allowed = MODES.filter((m) => !blocked || !blocked.includes(m));
+          const mode = allowed.length ? allowed[(Math.random() * allowed.length) | 0] : null;
           if (mode) this._spawn(mode); else this.spawnTimer = 2;
         }
       }

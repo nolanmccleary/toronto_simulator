@@ -166,10 +166,60 @@ html, body {
 .overlay {
   position: fixed; inset: 0; z-index: 20;
   display: none; align-items: center; justify-content: center;
+  gap: 34px; flex-wrap: wrap; padding: 24px; overflow: auto;
   background: radial-gradient(ellipse at center, rgba(12, 10, 22, 0.45), rgba(12, 10, 22, 0.82));
   cursor: pointer; backdrop-filter: blur(2px);
 }
 #start { display: flex; }
+
+/* ---- Account form ---- */
+#account { margin: 18px auto 4px; max-width: 320px; cursor: default; }
+#acct-signedin { color: #cdd3ef; font-size: 14px; letter-spacing: 1px; }
+#acct-signedin b { color: var(--teal); }
+#acct-form { display: grid; gap: 8px; }
+#account input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font-family: var(--font); font-size: 14px;
+  color: #eef1ff; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px; outline: none;
+}
+#account input:focus { border-color: var(--teal); box-shadow: 0 0 14px rgba(83, 240, 208, 0.18); }
+.acct-btns { display: flex; gap: 8px; }
+#account button, #logout-btn {
+  flex: 1; padding: 9px 12px; cursor: pointer; font-family: var(--font); font-size: 12px; letter-spacing: 1.5px;
+  color: var(--ink); background: var(--teal); border: 0; border-radius: 7px; font-weight: 700;
+}
+#account #signup-btn { color: #eef1ff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); }
+#logout-btn { flex: none; margin-left: 8px; padding: 4px 10px; background: rgba(255, 255, 255, 0.08); color: #eef1ff; border: 1px solid rgba(255, 255, 255, 0.2); font-size: 11px; }
+#account button:disabled { opacity: 0.5; cursor: default; }
+#acct-msg { min-height: 14px; font-size: 12px; letter-spacing: 0.5px; }
+#acct-msg.err { color: var(--coral); }
+#acct-msg.ok { color: var(--teal); }
+.acct-hint { color: var(--dim); font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
+.hide { display: none !important; }
+
+/* ---- Leaderboard ---- */
+.board-panel {
+  cursor: default; width: 280px; max-width: 86vw; align-self: center;
+  padding: 20px; border: 1px solid rgba(83, 240, 208, 0.22); border-radius: 12px;
+  background: rgba(10, 14, 22, 0.5);
+}
+.board-panel h2 {
+  font-size: 13px; letter-spacing: 4px; color: var(--teal); margin-bottom: 14px; text-align: center;
+  text-shadow: 0 0 12px rgba(83, 240, 208, 0.3);
+}
+.board-list { list-style: none; display: grid; gap: 2px; }
+.brow {
+  display: grid; grid-template-columns: 24px 1fr auto auto; gap: 10px; align-items: baseline;
+  padding: 6px 8px; border-radius: 6px; font-size: 14px; color: #dfe4f7; font-variant-numeric: tabular-nums;
+}
+.brow:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
+.brow .rank { color: var(--dim); font-size: 12px; text-align: right; }
+.brow .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow .pts { color: var(--teal); font-weight: 700; }
+.brow .wv { color: var(--dim); font-size: 11px; }
+.brow.mine { background: rgba(83, 240, 208, 0.12); box-shadow: inset 0 0 0 1px rgba(83, 240, 208, 0.35); }
+.brow.mine .who { color: #fff; }
+.board-empty { color: var(--dim); font-size: 12px; text-align: center; padding: 10px; }
 
 .panel { text-align: center; padding: 40px; max-width: 560px; }
 .panel h1 {
@@ -300,6 +350,13 @@ kbd {
 .fuel-cap { font-size: 9px; letter-spacing: 2px; color: var(--dim); }
 #fuel-bar { width: 200px; height: 5px; border: 1px solid rgba(255, 209, 102, 0.4); border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
 #fuel-fill { height: 100%; width: 100%; background: #ffd166; box-shadow: 0 0 8px #ffd166; transition: width 0.08s linear; }
+
+/* neCROmancer summon bar (sits just above the aux bar). */
+#necro-wrap { display: none; position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); width: min(420px, 52vw); text-align: center; }
+#necro-label { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: #c6a8ff; margin-bottom: 5px; text-shadow: 0 0 12px rgba(155, 92, 255, 0.6); }
+#necro-bar { height: 7px; border: 1px solid rgba(155, 92, 255, 0.4); border-radius: 5px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
+#necro-fill { height: 100%; width: 0%; background: #9b5cff; box-shadow: 0 0 12px #9b5cff; transition: width 0.08s linear, background 0.2s; }
+#necro-count { font-size: 10px; letter-spacing: 2px; color: #7cff9e; margin-top: 4px; }
 
 /* "Press 6" power-up prompt. */
 #prompt { display: none; position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 15px; font-weight: 700; letter-spacing: 3px; color: #ffd166; text-shadow: 0 0 14px rgba(255, 209, 102, 0.6); white-space: nowrap; }

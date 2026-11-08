@@ -152,6 +152,12 @@ export class Boss {
     }
   }
 
+  // True if the player's body vertically overlaps the boss — so a ground-level dash/charge
+  // can't hit someone standing high up on a tower.
+  _vHit(player) {
+    return player.pos.y < this.pos.y + this.hitR + 0.5 && player.pos.y + PLAYER.height > this.pos.y - this.hitR;
+  }
+
   update(dt, player, enemies) {
     this.t += dt;
     const fx = enemies.effects;
@@ -243,7 +249,7 @@ export class Boss {
         if (this.subT <= 0) { this.sub = 'dash'; this.subT = 0.55; sfx.zip(); }
       } else if (this.sub === 'dash') {
         this.pos.addScaledVector(this.dashDir, 48 * dt);
-        if (Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z) < this.hitR + 1 && this.contactTimer <= 0) {
+        if (Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z) < this.hitR + 1 && this._vHit(player) && this.contactTimer <= 0) {
           this.contactTimer = 0.5; player.takeDamage(24);
         }
         if (this.subT <= 0) { this.sub = 'idle'; this.subT = 1.1; }
@@ -304,7 +310,7 @@ export class Boss {
       } else if (this.sub === 'charge') {
         this.pos.addScaledVector(this.dashDir, 40 * dt);
         fx.groundRing(this.pos, this.color, this.hitR + 1.5, 0.3);
-        if (Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z) < this.hitR + 2 && this.contactTimer <= 0) {
+        if (Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z) < this.hitR + 2 && this._vHit(player) && this.contactTimer <= 0) {
           this.contactTimer = 0.5; player.takeDamage(this.touch);
         }
         if (this.subT <= 0) { this.sub = 'idle'; this.subT = 1.4; }

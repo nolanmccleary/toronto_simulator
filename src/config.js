@@ -196,13 +196,42 @@ export const CIVIC = {
   coast: 1.5,            // gentler coast-down
   brake: 3.4,            // S while rolling forward brakes harder
   turnRate: 2.7,         // rad/sec steering (scaled by speed)
-  ramBase: 36,           // ram damage floor...
-  ramPerSpeed: 2.4,      // ...plus this per unit of speed
+  ramBase: 64,           // ram damage floor...
+  ramPerSpeed: 4.6,      // ...plus this per unit of speed (≈ 64–197 by speed)
   ramMinSpeed: 3,        // below this you just nudge
   ramCd: 0.25,           // per-enemy ram re-hit interval
   explodeRadius: 13,
   explodeDamage: 150,
   color: 0xff4d4d,       // impound red
+};
+
+// neCROmancer — ceremonial dagger + reanimation. Dagger kills raise the enemy as an ally.
+export const NECRO = {
+  speed: 1.2,
+  dagger: { range: 3.2, cooldown: 0.3, damage: 34 },  // weak + short, but kills reanimate
+  allyHpMul: 1.7,          // reanimated allies are tougher than they were as enemies
+  allyMinDamage: 9,        // floor so ranged types still hit as melee allies
+  allySpeed: 5.0,          // aggressive hunters
+  allyContact: 0.6,        // seconds between an ally's hits
+  enemyAggroAlly: 17,      // enemies fight an ally within this range if it's closer than the player
+  playerBias: 1.3,         // ...but they prefer the player at roughly equal range
+  hexRange: 46, hexCone: 0.32,   // right-click aims the horde at one enemy
+  charge: 26,              // seconds for the summon bar to fill
+  summonHold: 2.2,         // hold-E cast time for a GOLUMN
+  golumn: {
+    hp: 420, shield: 150, radius: 1.7, speed: 2.5,
+    melee: 32, meleeInterval: 0.7,
+    // beam variant — long-range precision bolt
+    ranged: 26, rangedInterval: 1.9, rangedRange: 40,
+    // fire variant — short-range flamethrower cone (per tick)
+    fireDamage: 7, fireRange: 15, fireArc: 0.55, fireTick: 0.15,
+    // heal variant — mends you + nearby allies on a pulse
+    healAmount: 16, healInterval: 1.6, healRadius: 20,
+    beamColor: 0xb57cff, fireColor: 0xff7a2a, healColor: 0x56ff9e,
+  },
+  color: 0x9b5cff,         // necro purple (mode accents)
+  allyColor: 0x56ff9e,     // reanimated allies glow green (friend vs. foe)
+  golumnColor: 0xb57cff,
 };
 
 // Katana guard (Somali mode, hold right-click): parries frontal melee + reflects

@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A minimal first-person PvE survival shooter. Clean geometric forms, a dusk palette, and the CN Tower on the horizon.",
+  "description": "A 1-player PvE survival shooter for the browser — vanilla JS + Three.js, no build step.",
   "scripts": {
-    "start": "node server.mjs",
-    "dev": "node server.mjs"
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0"
   }
 }
