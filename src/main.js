@@ -801,7 +801,7 @@ function beginPlay() {
   hud.showPrompt(null);
   hud.showStart(false);
   hud.showGameOver(false);
-  hud.showBanner('GET READY', 2.0);
+  hud.showBanner('LOCK IN', 2.0);
   hud.showCompass(true);
   state = 'playing';
 }

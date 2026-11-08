@@ -287,7 +287,7 @@ export class HUD {
   setStartMode(mode) {
     const title = this.$('start-title');
     const sub = this.$('start-sub');
-    if (mode === 'paused') { title.textContent = 'PAUSED'; sub.textContent = 'click to resume'; }
+    if (mode === 'paused') { title.textContent = 'HOL UP'; sub.textContent = 'click to resume'; }
     else { title.textContent = 'TORONTO SIMULATOR'; sub.textContent = 'click to play'; }
   }
 
