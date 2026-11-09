@@ -234,6 +234,7 @@ html, body {
   filter: drop-shadow(0 0 30px rgba(255, 93, 115, 0.3));
 }
 .panel p { margin-top: 14px; color: #cdd3ef; font-size: 15px; }
+#byline { margin-top: 8px; font-size: 12px; letter-spacing: 2.5px; color: rgba(230, 235, 255, 0.45); }
 .panel .sub, #start-sub { color: var(--teal); letter-spacing: 3px; font-size: 13px; animation: pulse 1.8s ease-in-out infinite; }
 
 .controls {
@@ -274,6 +275,8 @@ kbd {
   animation: seered-pulse 1.3s ease-in-out infinite;
 }
 #seered.drizzy { background: radial-gradient(ellipse at center, transparent 30%, rgba(190, 40, 0, 0.18) 55%, rgba(230, 60, 20, 0.6) 100%); }
+/* Brampton Berserker: just a faint red edge hint, no heavy tint and no pulse. */
+#seered.civic { background: radial-gradient(ellipse at center, transparent 52%, rgba(210, 30, 20, 0.03) 74%, rgba(220, 30, 20, 0.16) 100%); animation: none; opacity: 0.8; }
 @keyframes seered-pulse { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
 
 /* ---------- Fighter-jet HUD (Pressa/Drizzy) ---------- */
@@ -357,6 +360,12 @@ kbd {
 #necro-bar { height: 7px; border: 1px solid rgba(155, 92, 255, 0.4); border-radius: 5px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
 #necro-fill { height: 100%; width: 0%; background: #9b5cff; box-shadow: 0 0 12px #9b5cff; transition: width 0.08s linear, background 0.2s; }
 #necro-count { font-size: 10px; letter-spacing: 2px; color: #7cff9e; margin-top: 4px; }
+
+/* Logged-in / guest indicator (top-right) — so you always know if runs are saved. */
+#whoami { position: absolute; top: 26px; right: 34px; font-size: 11px; letter-spacing: 2px; color: var(--teal); text-shadow: 0 0 10px rgba(83, 240, 208, 0.4); z-index: 3; }
+#whoami b { color: #fff; font-weight: 700; }
+#whoami.guest { color: var(--dim); text-shadow: none; }
+#whoami.guest span { color: #ffb347; font-weight: 700; }
 
 /* "Press 6" power-up prompt. */
 #prompt { display: none; position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 15px; font-weight: 700; letter-spacing: 3px; color: #ffd166; text-shadow: 0 0 14px rgba(255, 209, 102, 0.6); white-space: nowrap; }

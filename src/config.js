@@ -171,7 +171,7 @@ export const PULSAR = { interval: 2.8, radius: 6, damage: 22 };
 // Health orbs: spawn/despawn around the arena; walk over one to heal.
 export const PICKUP = { heal: 25, radius: 1.9, interval: 7, intervalVar: 5, maxActive: 3, life: 15, color: 0x5effb0 };
 
-// Power modes: Somali Samurai (sabre) and XM01-Night Yute (Gat + missiles + jetpack).
+// Power modes: Somali Samurai (sabre) and XM-01 Night Yute (Gat + missiles + jetpack).
 // Both grant 30 auxiliary HP when picked up as a package; invoked from the /console they're infinite.
 export const POWER = {
   auxHp: 30,

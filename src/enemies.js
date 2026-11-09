@@ -17,7 +17,8 @@ const _tmp = new THREE.Vector3();
 export function buildModel(key, def, glowTex) {
   const r = def.radius;
   const g = new THREE.Group();
-  const fill = () => new THREE.MeshBasicMaterial({ color: 0x140810 });
+  // Translucent, faintly tinted body so the glowing core reads through it.
+  const fill = () => new THREE.MeshBasicMaterial({ color: 0x1b0e22, transparent: true, opacity: 0.55 });
   const emat = (op = 0.95) => new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: op, blending: THREE.AdditiveBlending });
   const wire = (geo, op) => new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat(op));
   const solid = (geo) => new THREE.Mesh(geo, fill());
@@ -126,6 +127,21 @@ export function buildModel(key, def, glowTex) {
       shell.rotation.y -= dt * 1.2; shell.rotation.z += dt * 0.6;
     };
   }
+
+  // Universal pulsing energy core — a bright additive heart (drawn over the body) so
+  // every enemy glows from within and radiates under bloom instead of reading flat.
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(r * 0.42, 0),
+    new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
+  core.renderOrder = 2;
+  g.add(core);
+  const baseAnimate = animate;
+  animate = (dt, en, dir) => {
+    baseAnimate && baseAnimate(dt, en, dir);
+    core.rotation.y += dt * 1.8; core.rotation.x += dt * 1.1;
+    const p = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin((en.bob || 0) * 4));
+    core.scale.setScalar(p); core.material.opacity = 0.26 + 0.2 * p;
+  };
+
   return { group: g, animate, glow };
 }
 

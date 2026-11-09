@@ -23,22 +23,27 @@ function spikeCluster(glowTex, color) {
   return { group: g, cones, glow };
 }
 
-// A cluster of flame tongues (local +y = jet direction). Blue, flickering.
+// A soft blue flame jet (local +y = jet direction): a tapering column of flickering
+// billboard glows — hot white-blue at the base fading to deep blue at the tip.
 function flameCluster(glowTex, color) {
   const g = new THREE.Group();
-  const tongues = [];
-  for (let i = 0; i < 7; i++) {
-    const geo = new THREE.ConeGeometry(0.55, HAZARD.flameReach * (0.7 + Math.random() * 0.5), 6);
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }));
-    const rr = i === 0 ? 0 : 1.1 + Math.random() * 1.2, a = Math.random() * Math.PI * 2;
-    m.position.set(Math.cos(a) * rr, geo.parameters.height * 0.5, Math.sin(a) * rr);
-    m.userData.phase = Math.random() * Math.PI * 2;
-    m.userData.base = m.position.y;
-    g.add(m); tongues.push(m);
+  const puffs = [];
+  const H = HAZARD.flameReach, N = 11;
+  const cold = new THREE.Color(0x2a6cff), hot = new THREE.Color(0x8fd4ff); // deep blue → light blue, no white
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);                              // 0 = base, 1 = tip
+    const size = (1.7 - t * 1.15) * (0.8 + Math.random() * 0.3);
+    const col = cold.clone().lerp(hot, Math.pow(1 - t, 1.4)).getHex();
+    const s = glowSprite(glowTex, col, size);
+    s.position.set((Math.random() - 0.5) * 0.5, t * H * 0.85 + 0.35, (Math.random() - 0.5) * 0.5);
+    s.material.opacity = 0.55 * (1 - t * 0.45);
+    s.userData.phase = Math.random() * Math.PI * 2;
+    s.userData.baseY = s.position.y;
+    s.userData.baseSize = size;
+    s.userData.baseOp = s.material.opacity;
+    g.add(s); puffs.push(s);
   }
-  const glow = glowSprite(glowTex, color, HAZARD.flameRadius * 2.4);
-  glow.position.y = HAZARD.flameReach * 0.45; g.add(glow);
-  return { group: g, cones: tongues, glow };
+  return { group: g, cones: puffs, glow: puffs[0] };
 }
 
 function orient(group, point, normal) {
@@ -219,8 +224,11 @@ export class Hazards {
       } else if (hz.phase === 'active') {
         if (hz.kind === 'flame') {
           for (const c of hz.cones) {
-            const f = 0.7 + 0.5 * Math.sin(hz.t * 18 + c.userData.phase);
-            c.scale.y = f; c.material.opacity = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(hz.t * 22 + c.userData.phase));
+            const fl = 0.5 + 0.5 * Math.sin(hz.t * 15 + c.userData.phase);
+            const fl2 = 0.5 + 0.5 * Math.sin(hz.t * 24 + c.userData.phase * 1.7);
+            c.scale.setScalar(c.userData.baseSize * (0.8 + 0.32 * fl));
+            c.material.opacity = c.userData.baseOp * (0.6 + 0.6 * fl2);
+            c.position.y = c.userData.baseY + Math.sin(hz.t * 8 + c.userData.phase) * 0.22;
           }
         } else {
           hz.spikes.scale.y = Math.min(1, hz.t / 0.12);
@@ -263,7 +271,7 @@ export class Hazards {
         if (!hz.outlet) this._makeOutlet(hz, out);
         else orient(hz.outlet.group, out.pos, out.normal);
         hz.outlet.t += dt;
-        if (hz.kind === 'flame') hz.outlet.cones.forEach((c, j) => { c.scale.y = 0.7 + 0.4 * Math.sin(hz.outlet.t * 18 + j); });
+        if (hz.kind === 'flame') hz.outlet.cones.forEach((c) => { c.scale.setScalar(c.userData.baseSize * (0.8 + 0.3 * Math.sin(hz.outlet.t * 15 + c.userData.phase))); });
         hz.piping = true;
       } else { this._clearOutlet(hz); hz.piping = false; }
     }

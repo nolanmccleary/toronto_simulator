@@ -36,7 +36,7 @@ export class Civic {
     const glassEdge = new THREE.LineBasicMaterial({ color: 0x8fe8ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
     const hubEdge = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending });
     const fillMat = new THREE.MeshBasicMaterial({ color: 0x140a0e, transparent: true, opacity: 0.92 });
-    const glassMat = new THREE.MeshBasicMaterial({ color: 0x13303c, transparent: true, opacity: 0.14, depthWrite: false }); // light tint — see out clearly
+    const glassMat = new THREE.MeshBasicMaterial({ color: 0x13303c, transparent: true, opacity: 0.04, depthWrite: false }); // near-transparent — basically clear glass
     const part = (geo, x, y, z, rx = 0, ry = 0, rz = 0, em = edgeMat, fm = fillMat) => {
       const m = new THREE.Mesh(geo, fm); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m);
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), em); e.position.copy(m.position); e.rotation.copy(m.rotation); g.add(e);
@@ -76,6 +76,7 @@ export class Civic {
     for (const sx of [-0.66, 0.66]) { const hl = glowSprite(this.glowTex, 0xfff2c8, 1.0); hl.position.set(sx, 0.72, -2.12); g.add(hl); }
     for (const sx of [-0.72, 0.72]) { const tl = glowSprite(this.glowTex, c, 0.85); tl.position.set(sx, 0.74, 2.12); g.add(tl); }
     const under = glowSprite(this.glowTex, c, 5.5); under.position.set(0, 0.05, 0); g.add(under);
+    this.underglow = under; // hidden while driving (the camera sits right on it and it'd wash the view red)
 
     this.group = g;
     this.scene.add(g);

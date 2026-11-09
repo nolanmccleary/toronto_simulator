@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJsonBody, sendJson } from './api/_lib/http.mjs';
-import { handleSignup, handleLogin, handleLogout, handleMe, handleScore, handleLeaderboard } from './api/_lib/handlers.mjs';
+import { handleSignup, handleLogin, handleLogout, handleMe, handleScore, handleLeaderboard, handleEvent, handleStats } from './api/_lib/handlers.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = process.env.PORT || 5173;
@@ -18,13 +18,19 @@ const API = {
   '/api/me': handleMe,
   '/api/score': handleScore,
   '/api/leaderboard': handleLeaderboard,
+  '/api/event': handleEvent,
+  '/api/stats': handleStats,
 };
-async function handleApi(req, res, pathname) {
+async function handleApi(req, res, pathname, query) {
   const fn = API[pathname];
   if (!fn) { sendJson(res, { status: 404, json: { error: 'not found' } }); return; }
   try {
     const body = req.method === 'POST' ? await readJsonBody(req) : {};
-    const result = await fn({ method: req.method, body, cookieHeader: req.headers.cookie || '' });
+    const result = await fn({
+      method: req.method, body, query,
+      cookieHeader: req.headers.cookie || '',
+      headers: req.headers || {},
+    });
     sendJson(res, result);
   } catch (e) {
     console.error(e);
@@ -45,8 +51,12 @@ const MIME = {
 
 createServer(async (req, res) => {
   try {
-    let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    if (path.startsWith('/api/')) { await handleApi(req, res, path); return; }
+    const parsed = new URL(req.url, 'http://x');
+    let path = decodeURIComponent(parsed.pathname);
+    if (path.startsWith('/api/')) {
+      await handleApi(req, res, path, Object.fromEntries(parsed.searchParams));
+      return;
+    }
     if (path === '/') path = '/index.html';
     // Prevent path traversal.
     const full = normalize(join(ROOT, path));

@@ -22,7 +22,12 @@ export function vercel(handler) {
   return async (req, res) => {
     try {
       const body = req.method === 'POST' ? await readJsonBody(req) : {};
-      const result = await handler({ method: req.method, body, cookieHeader: req.headers.cookie || '' });
+      const query = req.query || Object.fromEntries(new URL(req.url, 'http://x').searchParams);
+      const result = await handler({
+        method: req.method, body, query,
+        cookieHeader: req.headers.cookie || '',
+        headers: req.headers || {},
+      });
       sendJson(res, result);
     } catch (e) {
       console.error(e);

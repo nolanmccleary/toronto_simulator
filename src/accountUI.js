@@ -1,5 +1,6 @@
 // Wires the account forms + leaderboard panels to the account API.
 import { account } from './account.js';
+import { track } from './analytics.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -15,6 +16,8 @@ function msg(text, kind = 'err') {
   el.msg.className = text ? kind : '';
 }
 
+const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
 function renderAccount() {
   const u = account.user;
   el.signedIn.classList.toggle('hide', !u);
@@ -22,6 +25,15 @@ function renderAccount() {
   if (u) el.name.textContent = u.username;
   if (!u) { el.pass.value = ''; }
   msg('');
+  renderWho();
+}
+
+// Persistent in-HUD indicator so you always know if your run will be saved.
+function renderWho() {
+  if (!el.who) return;
+  const u = account.user;
+  el.who.innerHTML = u ? `◆ <b>${esc(u.username)}</b>` : '◆ GUEST · <span>NOT SAVING</span>';
+  el.who.classList.toggle('guest', !u);
 }
 
 function renderLeaderboard(rows) {
@@ -48,6 +60,7 @@ async function submit(kind) {
   el.login.disabled = el.signup.disabled = true;
   try {
     await (kind === 'signup' ? account.signup(username, password) : account.login(username, password));
+    track(kind); // signup | login
     renderAccount();
     refreshBoard();
   } catch (e) {
@@ -64,6 +77,7 @@ export const accountUI = {
     el.login = $('login-btn'); el.signup = $('signup-btn'); el.msg = $('acct-msg');
     el.boards = [$('board-list-start'), $('board-list-over')].filter(Boolean);
     el.status = $('score-status');
+    el.who = $('whoami');
 
     // Interacting with these panels must not trigger the overlay's click-to-play.
     for (const node of document.querySelectorAll('[data-noplay]')) {

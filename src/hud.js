@@ -108,7 +108,7 @@ export class HUD {
     this.targets.style.display = night ? 'block' : 'none';
     this.somaliText.style.display = kind === 'somali' ? 'flex' : 'none';
     if (kind) {
-      this.weaponName.textContent = night ? 'XM01-NIGHT YUTE' : necro ? 'SHAWARMA KNIFE' : 'SAUGA SABRE';
+      this.weaponName.textContent = night ? 'XM-01 NIGHT YUTE' : necro ? 'SHAWARMA KNIFE' : 'SAUGA SABRE';
       this.portalDots.style.display = 'none';
       this.crosshair.style.display = necro ? 'block' : 'none'; // necro aims the hex
       if (night) this.jetStatus.textContent = '● NIGHT YUTE · GAT + MISSILES';
@@ -135,7 +135,7 @@ export class HUD {
     if (!mode) { this.prompt.style.display = 'none'; return; }
     this.prompt.style.display = 'block';
     const label = mode === 'somali' ? 'SOMALI SAMURAI'
-      : mode === 'nightyute' ? 'XM01-NIGHT YUTE'
+      : mode === 'nightyute' ? 'XM-01 NIGHT YUTE'
       : mode === 'civic' ? 'DRIVE IMPOUNDED HONDA CIVIC'
       : mode === 'civic-enter' ? 'BACK IN THE CIVIC'
       : mode === 'necro' ? 'SUMMON neCROmancer'
@@ -146,6 +146,7 @@ export class HUD {
   // Brampton Berserker driving HUD: red vignette + crosshair off + weapon label.
   setCivicMode(on) {
     this.seered.style.display = on ? 'block' : 'none';
+    this.seered.classList.toggle('civic', on); // fainter red than Somali's full see-red
     this.crosshair.style.display = on ? 'none' : (this._weapon === 'draco' ? 'none' : 'block');
     this.scope.style.display = 'none';
     if (on) {

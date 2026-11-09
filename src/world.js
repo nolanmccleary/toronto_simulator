@@ -9,25 +9,42 @@ const randi = (a, b) => a + ((Math.random() * (b - a + 1)) | 0);
 
 // Structures rise out of / sink into the ground on each new round.
 const RISE_DEPTH = 30, RISE_DUR = 0.8, SINK_DUR = 0.55;
+// Neon accents for the arena architecture — a cohesive cool palette (teal/cyan/blue/
+// violet) with magenta + pink as rarer hot pops. Weighted by repetition, no clashing
+// greens/ambers (those are reserved for pads & pickups).
+const STRUCTURE_COLORS = [0x4bd8c4, 0x4bd8c4, 0x3fb8ff, 0x3fb8ff, 0x5a74ff, 0x8b63ff, 0xff4d9d, 0xff7aa8];
 const easeOut = (p) => 1 - Math.pow(1 - p, 3);
 const easeIn = (p) => p * p * p;
 
 function gradientSky() {
   const c = document.createElement('canvas');
-  c.width = 4; c.height = 256;
+  c.width = 4; c.height = 512;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0.00, PALETTE.skyTop);
-  grad.addColorStop(0.55, PALETTE.skyMid);
-  grad.addColorStop(0.82, PALETTE.skyGlow);
-  grad.addColorStop(0.93, PALETTE.skyHorizon);
-  grad.addColorStop(1.00, PALETTE.skyMid);
-  g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
+  const grad = g.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0.00, '#070615');   // deep-space indigo (zenith)
+  grad.addColorStop(0.34, '#1b1140');   // indigo
+  grad.addColorStop(0.58, '#3f2466');   // violet
+  grad.addColorStop(0.75, '#7d3474');   // magenta dusk
+  grad.addColorStop(0.86, '#ff6450');   // sunset coral
+  grad.addColorStop(0.93, '#ffb062');   // warm horizon band
+  grad.addColorStop(1.00, '#2a1636');   // ground haze
+  g.fillStyle = grad; g.fillRect(0, 0, 4, 512);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const geo = new THREE.SphereGeometry(3000, 32, 16);
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false });
   return new THREE.Mesh(geo, mat);
+}
+
+// A soft radial gradient texture (bright centre → transparent) for glows/pools.
+function radialTex(inner = 'rgba(120,255,220,0.9)', outer = 'rgba(120,255,220,0)') {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, inner); grad.addColorStop(1, outer);
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 // The CN Tower: tapering shaft, main observation pod, SkyPod, long antenna mast.
@@ -93,9 +110,10 @@ export class World {
     this.outgoing = [];      // structures sinking away
     this._cur = null;        // structure group currently being built
 
-    scene.fog = new THREE.Fog(PALETTE.fog, 50, 230);
+    scene.fog = new THREE.Fog(0x1a1030, 60, 260);
     scene.add(gradientSky());
     scene.add(torontoSkyline());
+    this._buildAtmosphere();
     this._buildFloor();
     this._buildBoundary();
 
@@ -104,20 +122,63 @@ export class World {
     this.regenerate();
   }
 
+  // Setting sun, stars, a glowing ground pool and slow-drifting embers. All additive so
+  // the bloom pass lights them up.
+  _buildAtmosphere() {
+    const sc = this.scene;
+    // --- sun, low behind the skyline ---
+    const sun = new THREE.Group();
+    const spr = (tex, size, op) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); s.scale.setScalar(size); return s; };
+    sun.add(spr(radialTex('rgba(255,180,110,1)', 'rgba(255,90,70,0)'), 520, 0.9));   // outer halo
+    sun.add(spr(radialTex('rgba(255,235,200,1)', 'rgba(255,150,90,0)'), 230, 1.0));  // core
+    sun.position.set(70, 120, -1100);
+    sc.add(sun);
+
+    // --- stars (upper sky only) ---
+    const N = 520, pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const u = Math.random(), v = 0.15 + Math.random() * 0.85; // bias upward
+      const th = u * Math.PI * 2, ph = Math.acos(v);
+      const r = 1600;
+      pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+      pos[i * 3 + 1] = Math.abs(r * Math.cos(ph)) * 0.9 + 80;
+      pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+    }
+    const sGeo = new THREE.BufferGeometry(); sGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const stars = new THREE.Points(sGeo, new THREE.PointsMaterial({ map: radialTex('rgba(210,228,255,1)', 'rgba(170,205,255,0)'), size: 6, sizeAttenuation: true, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    sc.add(stars); this._stars = stars;
+
+    // --- drifting embers (small bokeh fireflies) ---
+    const M = 180, ep = new Float32Array(M * 3);
+    this._emberV = new Float32Array(M);
+    for (let i = 0; i < M; i++) {
+      ep[i * 3] = (Math.random() * 2 - 1) * this.half;
+      ep[i * 3 + 1] = Math.random() * 42;
+      ep[i * 3 + 2] = (Math.random() * 2 - 1) * this.half;
+      this._emberV[i] = 1.0 + Math.random() * 2.2;
+    }
+    const eGeo = new THREE.BufferGeometry(); eGeo.setAttribute('position', new THREE.BufferAttribute(ep, 3));
+    this._embers = new THREE.Points(eGeo, new THREE.PointsMaterial({ map: radialTex('rgba(255,200,140,1)', 'rgba(255,120,80,0)'), size: 0.42, sizeAttenuation: true, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+    sc.add(this._embers);
+  }
+
   _buildFloor() {
+    // Dark blue-indigo floor (not black) so the ground still reads at grazing angles.
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(this.half * 2, this.half * 2),
-      new THREE.MeshBasicMaterial({ color: 0x0a0812 }),
+      new THREE.MeshBasicMaterial({ color: 0x0b1222 }),
     );
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
 
+    // Two grids: a brighter 1-unit lattice + a faint coarse one for depth.
     const grid = new THREE.GridHelper(this.half * 2, this.half, PALETTE.primary, PALETTE.primary);
-    grid.material.transparent = true;
-    grid.material.opacity = 0.14;
-    grid.position.y = 0.01;
-    this.scene.add(grid);
-    this._pulsers.push((t) => { grid.material.opacity = 0.1 + 0.05 * (0.5 + 0.5 * Math.sin(t * 1.6)); });
+    grid.material.transparent = true; grid.material.opacity = 0.2;
+    grid.position.y = 0.01; this.scene.add(grid);
+    const grid2 = new THREE.GridHelper(this.half * 2, this.half / 4, 0x3fb8ff, 0x3fb8ff);
+    grid2.material.transparent = true; grid2.material.opacity = 0.12;
+    grid2.position.y = 0.015; this.scene.add(grid2);
+    this._pulsers.push((t) => { grid.material.opacity = 0.16 + 0.07 * (0.5 + 0.5 * Math.sin(t * 1.6)); });
   }
 
   _buildBoundary() {
@@ -174,13 +235,17 @@ export class World {
     this.dynamic.add(g);
     this.structures.push({ group: g, t: 0, delay: rand(0, 0.3) });
     this._cur = g;
+    // each feature takes a neon accent so the arena reads as a colourful city, not all teal
+    this._curColor = pick(STRUCTURE_COLORS);
     return g;
   }
 
   // A dark neon-edged box, added to the current structure. Everything is climbable.
-  _box(cx, cy, cz, w, h, d, { color = PALETTE.primary, opacity = 0.92 } = {}) {
+  _box(cx, cy, cz, w, h, d, { color = this._curColor || PALETTE.primary, opacity = 0.92 } = {}) {
     const geo = new THREE.BoxGeometry(w, h, d);
-    const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x0b0a16, transparent: true, opacity }));
+    // very dark tinted fill so buildings read by their glowing edges, not bright slabs
+    const fillCol = new THREE.Color(color).multiplyScalar(0.05).getHex();
+    const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: fillCol, transparent: true, opacity }));
     fill.position.set(cx, cy, cz);
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(geo),
@@ -404,6 +469,18 @@ export class World {
   update(t, dt = 0) {
     for (const p of this._pulsers) p(t);
     for (const p of this._dynPulsers) p(t);
+
+    // Drifting embers (rise + gentle sway, wrap at the ceiling).
+    if (this._embers) {
+      const a = this._embers.geometry.attributes.position, arr = a.array, h = this.half;
+      for (let i = 0; i < this._emberV.length; i++) {
+        arr[i * 3 + 1] += this._emberV[i] * dt;
+        arr[i * 3] += Math.sin(t * 0.5 + i) * 0.4 * dt;
+        if (arr[i * 3 + 1] > 46) { arr[i * 3 + 1] = 0; arr[i * 3] = (Math.random() * 2 - 1) * h; arr[i * 3 + 2] = (Math.random() * 2 - 1) * h; }
+      }
+      a.needsUpdate = true;
+    }
+    if (this._stars) this._stars.material.opacity = 0.75 + 0.2 * Math.sin(t * 0.8);
 
     // Rising structures.
     for (const s of this.structures) {

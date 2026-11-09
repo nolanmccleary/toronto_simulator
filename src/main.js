@@ -15,12 +15,15 @@ import { HUD } from './hud.js';
 import { raycastWorld } from './raycast.js';
 import { initAudio, sfx, toggleMute } from './audio.js';
 import { accountUI } from './accountUI.js';
+import { Post } from './post.js';
+import { track } from './analytics.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.domElement.id = 'game';
 document.getElementById('app').appendChild(renderer.domElement);
+const post = new Post(renderer);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(PLAYER.fovBase, innerWidth / innerHeight, 0.1, 4000);
@@ -62,7 +65,7 @@ let hardcore = false;     // Torontomans one-hit-death
 let clock = performance.now();
 let worldTime = 0;
 
-// --- Power modes: Somali Samurai + XM01-Night Yute ---
+// --- Power modes: Somali Samurai + XM-01 Night Yute ---
 const KATANA_REACH = 5.0;
 const KATANA_CD = 0.3;
 let power = null;                // null | 'somali' | 'nightyute'
@@ -229,7 +232,7 @@ const place = (m, x, y, z, rx = 0) => { m.position.set(x, y, z); if (rx) m.rotat
 const box = (w, h, d, line, op = 1) => gunPart(new THREE.BoxGeometry(w, h, d), GUN_BODY, line, op);
 const tubeZ = (r, len, line, seg = 16) => { const m = gunPart(new THREE.CylinderGeometry(r, r, len, seg), GUN_TUBE, line, 0.85); m.rotation.x = Math.PI / 2; return m; };
 const taperZ = (r1, r2, len, line) => { const m = gunPart(new THREE.CylinderGeometry(r1, r2, len, 16), GUN_TUBE, line, 0.85); m.rotation.x = Math.PI / 2; return m; };
-const glow = (w, h, d, color) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending }));
+const glow = (w, h, d, color) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending }));
 const guard = (color) => { const m = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.007, 6, 18), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 })); m.rotation.y = Math.PI / 2; return m; };
 const lensDisc = (r, color) => new THREE.Mesh(new THREE.CircleGeometry(r, 18), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
 
@@ -494,8 +497,9 @@ function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
   dagger.visible = (kind === 'necro');
   updateGunVisibility(); // hide the held gun while a power mode is active
   hud.setPowerMode(kind);
-  hud.showBanner(kind === 'somali' ? 'WALLAHI MODE ACTIVATED' : kind === 'nightyute' ? 'NIGHT YUTE ONLINE' : 'neCROmancer SUMMONED', 2.4);
+  hud.showBanner(kind === 'somali' ? 'WARYAAAAAA' : kind === 'nightyute' ? 'NIGHT YUTE ONLINE' : 'neCROmancer SUMMONED', 2.4);
   sfx.wave();
+  track('mode', { mode: kind, permanent });
 }
 function disengagePower() {
   if (!power) return;
@@ -539,6 +543,7 @@ function enterCivic({ permanent = false } = {}) {
   player.releaseGrapple();
   player.scopeFov = null; hud.setScoped(false);
   updateGunVisibility();         // hide the held gun
+  if (civic.underglow) civic.underglow.visible = false; // stop it washing the cockpit red
   civicInterior.visible = true;
   hud.setCivicMode(true);
   hud.showBanner('BRAMPTON BERSERKER MODE ENGAGED', 2.4);
@@ -552,6 +557,7 @@ function leaveCivicHud() {
   driving = false;
   player.vehicle = null;
   player.hitRadius = PLAYER.radius;
+  if (civic.underglow) civic.underglow.visible = true; // restore the exterior glow
   civicInterior.visible = false;
   hud.setCivicMode(false);
   hud.setWeapon(WEAPONS[weapon]);
@@ -804,6 +810,7 @@ function beginPlay() {
   hud.showBanner('LOCK IN', 2.0);
   hud.showCompass(true);
   state = 'playing';
+  track('play_start');
 }
 
 function gameOver() {
@@ -814,6 +821,7 @@ function gameOver() {
   sfx.over();
   hud.showGameOver(true, enemies.score, enemies.wave);
   accountUI.reportScore(enemies.score, enemies.wave); // posts the run if logged in
+  track('game_over', { score: enemies.score, wave: enemies.wave });
 }
 
 input.onLockChange((locked) => {
@@ -913,6 +921,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  post.setSize();
 });
 
 // --- Loop ---
@@ -1012,7 +1021,7 @@ function loop() {
   effects.update(dt);
   world.update(worldTime, dt);
   hud.update(dt);
-  renderer.render(scene, camera);
+  post.render(scene, camera, dt);
 }
 
 hud.setHealth(PLAYER.maxHealth, PLAYER.maxHealth);
