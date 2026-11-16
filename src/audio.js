@@ -74,6 +74,7 @@ export const sfx = {
   slice:    () => { noise({ dur: 0.16, gain: 0.2 }); blip({ type: 'triangle', freq: 1950, to: 480, dur: 0.13, gain: 0.14 }); blip({ type: 'sine', freq: 2900, to: 1000, dur: 0.1, gain: 0.07, delay: 0.02 }); },
   gat:      () => blip({ type: 'square', freq: 210, to: 120, dur: 0.045, gain: 0.12 }),
   missile:  () => { blip({ type: 'sawtooth', freq: 300, to: 900, dur: 0.26, gain: 0.2 }); noise({ dur: 0.14, gain: 0.12 }); },
+  bow:      () => { blip({ type: 'triangle', freq: 220, to: 70, dur: 0.12, gain: 0.22 }); noise({ dur: 0.07, gain: 0.08 }); }, // bowstring thwip
   lock:     () => blip({ type: 'sine', freq: 1500, dur: 0.04, gain: 0.08 }),
   locked:   () => { blip({ type: 'square', freq: 1200, dur: 0.05, gain: 0.12 }); blip({ type: 'square', freq: 1600, dur: 0.06, gain: 0.12, delay: 0.05 }); },
 };

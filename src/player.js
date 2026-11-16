@@ -47,6 +47,8 @@ export class Player {
     this.vehicle = null;                                    // Civic while driving: redirects takeDamage
     this.hitRadius = PLAYER.radius;                         // enemy-contact/projectile radius (grows while driving)
     this.frozen = false;                                    // rooted (no run/jump) while summoning a GOLUMN
+    this.stealth = false;                                   // camo hat: cloaked from regular enemies
+    this.stealthReveal = 0;                                 // seconds of exposure left after firing a shot
 
     // jump feel
     this.coyote = 0; this.jumpBuf = 0;
@@ -63,6 +65,12 @@ export class Player {
     this._basis();
     this._updateCamera();
   }
+
+  // Truly unseen right now: wearing camo AND not in the brief reveal window after a shot.
+  get hidden() { return this.stealth && this.stealthReveal <= 0; }
+
+  // A shot gives you away: enemies re-acquire you for `t` seconds, then you fade back.
+  reveal(t) { if (this.stealth) this.stealthReveal = Math.max(this.stealthReveal, t); }
 
   _basis() {
     this._fwd.set(Math.sin(this.yaw) * -1, 0, Math.cos(this.yaw) * -1).normalize();
@@ -115,6 +123,7 @@ export class Player {
   update(dt, input, world) {
     const ev = { jumped: false, launched: false, landed: 0, climbStart: false };
     if (this._hurtCooldown > 0) this._hurtCooldown -= dt;
+    if (this.stealthReveal > 0) this.stealthReveal = Math.max(0, this.stealthReveal - dt);
 
     // --- Look (finer while scoped) ---
     const look = input.consumeLook();

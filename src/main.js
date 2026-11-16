@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, PUMP, GATLING, MISSILE, POWER, JET, CIVIC, NECRO, PLAYER } from './config.js';
+import { PALETTE, WEAPON, WEAPONS, PORTAL, GRAPPLE, DRACO, PUMP, GATLING, MISSILE, POWER, JET, CIVIC, NECRO, PLAYER, CAMO, BOW } from './config.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { Enemies } from './enemies.js';
@@ -8,6 +8,7 @@ import { Portals } from './portals.js';
 import { Hazards } from './hazards.js';
 import { Pickups } from './pickups.js';
 import { Powerups } from './powerups.js';
+import { CamoHats } from './camo.js';
 import { Civic } from './civic.js';
 import { Allies } from './allies.js';
 import { Input } from './input.js';
@@ -36,6 +37,7 @@ const portals = new Portals(scene, effects);
 const hazards = new Hazards(scene, effects);
 const pickups = new Pickups(scene, effects);
 const powerups = new Powerups(scene, effects);
+const camo = new CamoHats(scene, effects);
 const civic = new Civic(scene, effects);
 const allies = new Allies(scene, effects);
 allies.bind(world);
@@ -45,6 +47,8 @@ enemies.onReanimate = (data) => allies.reanimate(data); // dagger kills join the
 hazards.bind(world);
 pickups.bind(world);
 powerups.bind(world);
+camo.bind(world);
+camo.onCollect = () => engagePower('camo', { permanent: false, aux: CAMO.auxHp });
 player.portals = portals;
 const input = new Input(renderer.domElement);
 const hud = new HUD();
@@ -157,6 +161,69 @@ const dagger = new THREE.Group();
   dagger.visible = false; camera.add(dagger);
 })();
 const daggerState = { swinging: false, t: 0, idleT: 0 };
+
+// Huntsman's Bow (Stealth-mode viewmodel) — a longbow held in the left hand at a 3/4 angle:
+// two gently-curved vertical limbs, a long straight string down the near side, and a nocked
+// arrow pointing forward toward the crosshair. Drawing pulls the string + arrow back.
+const bow = new THREE.Group();
+let bowDraw = 0, bowWasDrawing = false, bowIdle = 0;
+const BOW_REST_POS = [-0.34, -0.12, -0.58];    // held in the left hand, out of the sightline
+const BOW_REST_ROT = [0.0, -0.22, 0.05];       // mostly face-on so the recurve reads; slight turn for depth
+(() => {
+  const c = BOW.color;
+  const wood = new THREE.MeshBasicMaterial({ color: 0x74b84e });  // green bow body
+  // A recurve silhouette in the XY plane (facing the player): the stave bulges LEFT (−x,
+  // away from centre) and the limb tips curl back toward the string on the right. The string
+  // is the straight vertical line on the right (toward centre); the arrow crosses it to −z.
+  const TIPY = 0.28, TIPX = 0.025;
+  const limbPts = [
+    new THREE.Vector3(TIPX, -TIPY, 0),            // lower tip (recurved, +x)
+    new THREE.Vector3(-0.085, -0.17, 0),          // lower limb out (−x)
+    new THREE.Vector3(-0.1, 0, 0),                // belly / grip (bulge −x)
+    new THREE.Vector3(-0.085, 0.17, 0),           // upper limb out
+    new THREE.Vector3(TIPX, TIPY, 0)];            // upper tip (recurved)
+  const limbCurve = new THREE.CatmullRomCurve3(limbPts);
+  const body = new THREE.Mesh(new THREE.TubeGeometry(limbCurve, 30, 0.013, 7, false), wood);
+  const glowTube = new THREE.Mesh(new THREE.TubeGeometry(limbCurve, 30, 0.032, 6, false),
+    new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.11, 0.05), new THREE.MeshBasicMaterial({ color: 0x2f3d1a }));
+  grip.position.set(-0.1, 0, 0);                                 // the hand holds the belly
+  // String = two bright cylinders (upper tip→nock, nock→lower tip). Tips are the limb ends;
+  // the nock (their midpoint) pulls back (+z) while drawing, bending the string into a "<".
+  const tU = new THREE.Vector3(TIPX, TIPY, 0);
+  const tL = new THREE.Vector3(TIPX, -TIPY, 0);
+  const mid = new THREE.Vector3(TIPX, 0, 0);
+  const strMat = new THREE.MeshBasicMaterial({ color: 0xf2f6da });
+  const strU = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), strMat);
+  const strL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), strMat);
+  // Nocked arrow: a long shaft down −z (into the screen) with a bright head + fletch.
+  const arrow = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.58, 6), new THREE.MeshBasicMaterial({ color: 0xc89a58 }));
+  shaft.rotation.x = Math.PI / 2; shaft.position.z = -0.28;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.07, 6), new THREE.MeshBasicMaterial({ color: c }));
+  head.rotation.x = -Math.PI / 2; head.position.z = -0.59;
+  const fletch = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.05, 0.07), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+  fletch.position.z = 0.02;
+  arrow.add(shaft, head, fletch);
+  arrow.position.copy(mid);
+  bow.add(body, glowTube, grip, strU, strL, arrow, glowSprite(effects.glowTex, c, 0.9));
+  bow.position.set(...BOW_REST_POS);
+  bow.rotation.set(...BOW_REST_ROT);
+  bow.visible = false;
+  bow.userData = { strU, strL, tU, tL, mid, arrow };
+  camera.add(bow);
+})();
+
+// Lay a unit-height cylinder along the segment a→b (used for the bow string halves).
+const _segUp = new THREE.Vector3(0, 1, 0), _segDir = new THREE.Vector3();
+function orientSeg(mesh, a, b) {
+  _segDir.subVectors(b, a);
+  const len = _segDir.length() || 1e-4;
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.scale.set(1, len, 1);
+  mesh.quaternion.setFromUnitVectors(_segUp, _segDir.multiplyScalar(1 / len));
+}
+const _nock = new THREE.Vector3();
 // Reverse (icepick) grip held point-forward, then a fast straight thrust — not a swing.
 const GPOSE = {
   idle:   { p: [0.34, -0.42, -0.6],  r: [-1.0, 0.22, 0.15] },
@@ -488,6 +555,10 @@ function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
   } else if (kind === 'nightyute') {
     player.speedMul = POWER.nightGroundSpeed; player.flySpeedMul = POWER.nightFlySpeed;
     player.jetpackEnabled = true; player.fuel = JET.fuelMax;
+  } else if (kind === 'camo') {
+    player.speedMul = 1; player.flySpeedMul = 1; player.jetpackEnabled = false;
+    player.stealth = true; player.stealthReveal = 0;   // cloaked until you loose an arrow
+    bowDraw = 0; bowWasDrawing = false;
   } else { // necro
     player.speedMul = NECRO.speed; player.flySpeedMul = NECRO.speed; player.jetpackEnabled = false;
     allies.reset(); necroCharge = 0; summonProgress = 0; daggerState.swinging = false;
@@ -495,9 +566,11 @@ function engagePower(kind, { permanent = false, aux = POWER.auxHp } = {}) {
   katana.visible = (kind === 'somali');
   gatling.visible = (kind === 'nightyute');
   dagger.visible = (kind === 'necro');
+  bow.visible = (kind === 'camo');
   updateGunVisibility(); // hide the held gun while a power mode is active
   hud.setPowerMode(kind);
-  hud.showBanner(kind === 'somali' ? 'WARYAAAAAA' : kind === 'nightyute' ? 'NIGHT YUTE ONLINE' : 'neCROmancer SUMMONED', 2.4);
+  hud.showBanner(kind === 'somali' ? 'WARYAAAAAA' : kind === 'nightyute' ? 'NIGHT YUTE ONLINE'
+    : kind === 'camo' ? (permanent ? 'GHOST MODE' : 'CAMO ON — YUH GHOST') : 'neCROmancer SUMMONED', 2.4);
   sfx.wave();
   track('mode', { mode: kind, permanent });
 }
@@ -507,11 +580,14 @@ function disengagePower() {
   player.invuln = false; player.auxHp = 0;
   player.speedMul = 1; player.flySpeedMul = 1; player.jetpackEnabled = false; player.flying = false;
   player.guarding = false;
-  katana.visible = false; gatling.visible = false; dagger.visible = false; katanaState.swinging = false;
+  player.stealth = false; player.stealthReveal = 0; player.scopeFov = null;
+  katana.visible = false; gatling.visible = false; dagger.visible = false; bow.visible = false; katanaState.swinging = false;
   clearDrizzy(); clearNecro();
   player.health = Math.min(PLAYER.maxHealth, powerSnapshot); // save as before
   wasted.length = 0; kTaps = 0;
   hud.setPowerMode(null);
+  hud.setStealth(false);
+  hud.setScoped(false);
   hud.setWeapon(WEAPONS[weapon]);
   updateGunVisibility(); // bring the held gun back
 }
@@ -519,10 +595,12 @@ function resetPower() {
   power = null; powerPermanent = false; swingCd = 0; kTaps = 0; wasted.length = 0;
   player.invuln = false; player.auxHp = 0; player.speedMul = 1; player.flySpeedMul = 1;
   player.jetpackEnabled = false; player.flying = false; player.guarding = false;
-  katana.visible = false; gatling.visible = false; dagger.visible = false; katanaState.swinging = false;
+  player.stealth = false; player.stealthReveal = 0; player.scopeFov = null;
+  katana.visible = false; gatling.visible = false; dagger.visible = false; bow.visible = false; katanaState.swinging = false;
   clearDrizzy(); clearNecro();
   updateGunVisibility();
   hud.setPowerMode(null);
+  hud.setStealth(false);
 }
 
 // Dismiss the whole horde + necro viewmodels/state.
@@ -610,7 +688,67 @@ function powerUpdate(dt) {
   if (power === 'somali') somaliWeapons(dt);
   else if (power === 'nightyute') nightyuteWeapons(dt);
   else if (power === 'necro') necroWeapons(dt);
+  else if (power === 'camo') bowWeapons(dt);
   for (let i = wasted.length - 1; i >= 0; i--) { wasted[i].t += dt; if (wasted[i].t > 0.6) wasted.splice(i, 1); }
+}
+
+// Huntsman's Bow: hold left-mouse to draw (damage scales with the draw), release to loose.
+// Right-mouse steadies the draw with a modest zoom. The shot reveals you for a beat.
+function bowWeapons(dt) {
+  player.scopeFov = input.firing2 ? BOW.aimFov : null;
+  const drawing = input.firing;
+  if (drawing) {
+    bowDraw = Math.min(1, bowDraw + dt / BOW.drawTime);
+  } else {
+    if (bowWasDrawing && bowDraw >= BOW.minDraw) fireBow(bowDraw);
+    bowDraw = 0;
+  }
+  bowWasDrawing = drawing;
+  animateBow(dt);
+}
+function fireBow(draw) {
+  const ray = player.getRay();
+  const mz = muzzlePoint(ray).clone();
+  const crit = Math.random() < BOW.critChance;                    // any draw can crit...
+  const base = BOW.minDamage + (BOW.maxDamage - BOW.minDamage) * draw;
+  const dmg = Math.round(base * (crit ? BOW.critMult : 1));       // ...for a flat 2x on top of the drawn damage
+  const col = crit ? BOW.critColor : BOW.color;
+  const res = enemies.hitscan(ray, { damage: dmg, range: BOW.range, pierce: draw >= 0.98 }); // full draw punches through
+  shootCivic(ray, dmg, BOW.range);
+  effects.tracer(mz, res.end, col);
+  effects.muzzle(res.end, col);
+  if (crit) { effects.flash(res.end.clone(), BOW.critColor, 7, 0.4); sfx.locked(); } // gold pop + ping on a crit
+  vmKick = 0.9;
+  player.reveal(CAMO.revealTime);   // loosing the arrow gives you away
+  sfx.bow();
+}
+// Draw-back animation: the nock + arrow slide toward the camera as bowDraw rises; a subtle
+// idle sway otherwise. While cloaked the whole bow renders ghostly; a shot flicks it solid.
+function animateBow(dt) {
+  bowIdle += dt;
+  const u = bow.userData;
+  const pull = bowDraw * 0.22;
+  _nock.set(u.mid.x, u.mid.y, pull);            // nock draws back toward the face
+  orientSeg(u.strU, u.tU, _nock);
+  orientSeg(u.strL, _nock, u.tL);
+  u.arrow.position.z = pull;
+  const sway = Math.sin(bowIdle * 1.4) * 0.004 * (1 - bowDraw * 0.7);
+  const bob = Math.sin(bowIdle * 1.05) * 0.004 * (1 - bowDraw);
+  bow.position.set(BOW_REST_POS[0] + sway, BOW_REST_POS[1] + bob, BOW_REST_POS[2] + vmKick * 0.05);
+  bow.rotation.set(BOW_REST_ROT[0], BOW_REST_ROT[1], BOW_REST_ROT[2] + Math.sin(bowIdle * 1.2) * 0.012 - vmKick * 0.04 - bowDraw * 0.03);
+  setBowCloak(player.hidden);
+}
+// Fade the bow to a ghost while you're unseen; snap it solid during the post-shot reveal.
+let _bowCloaked = null;
+function setBowCloak(on) {
+  if (on === _bowCloaked) return;
+  _bowCloaked = on;
+  bow.traverse((o) => {
+    const m = o.material; if (!m) return;
+    if (m.userData._op0 === undefined) { m.userData._op0 = m.opacity ?? 1; m.userData._t0 = !!m.transparent; }
+    m.transparent = on ? true : m.userData._t0;
+    m.opacity = on ? m.userData._op0 * 0.3 : m.userData._op0;
+  });
 }
 
 // neCROmancer: dagger (left, reanimates kills), hex (right, focus-fire the horde),
@@ -798,6 +936,7 @@ function beginPlay() {
   hazards.reset();
   pickups.reset();
   powerups.reset();
+  camo.reset();
   weaponCd = 0;
   resetPower();
   resetCivic();
@@ -897,6 +1036,7 @@ function parseMode(s) {
   if (/yute|drizzy|xm01|night/.test(s)) return 'nightyute';
   if (/brampton|berserker|civic|honda/.test(s)) return 'civic';
   if (/necro|cromancer|summon|golum|gollum/.test(s)) return 'necro';
+  if (/camo|stealth|ghost|cloak|invis|sneak|hunts?man|bow/.test(s)) return 'camo';
   return null;
 }
 const consoleInput = document.getElementById('console-input');
@@ -994,6 +1134,7 @@ function loop() {
     pickups.update(dt, player, true);
     // Offer a package only when free (not powered-up / driving); don't stack a 2nd Civic.
     powerups.update(dt, player, !power && !driving, civic.alive ? ['civic'] : null);
+    camo.update(dt, player, !power && !driving); // camo hat: only drops/collects when free
     const nearCivic = civic.alive && !driving && civic.nearPlayer(player);
     hud.showPrompt(power || driving ? null : (nearCivic ? 'civic-enter' : powerups.nearMode(player)));
 
@@ -1013,6 +1154,8 @@ function loop() {
     if (driving) hud.setCivicHealth(civic.invincible ? Infinity : civic.hp, civic.maxHp);
     else hud.setPowerStatus(power, powerPermanent ? Infinity : player.auxHp, POWER.auxHp, player.jetpackEnabled ? player.fuel / JET.fuelMax : -1);
     hud.setNecro(power === 'necro', necroCharge, summonProgress, allies.count);
+    hud.setStealth(power === 'camo', player.hidden); // cloak overlay + GHOST/EXPOSED readout
+    hud.setDraw(power === 'camo', bowDraw, bowDraw >= 0.999); // Huntsman's Bow charge meter
 
     if (!player.alive) gameOver();
   }
@@ -1033,9 +1176,10 @@ if (new URLSearchParams(location.search).has('dev')) {
   window.__t = {
     THREE, player, enemies, world, portals, hazards, pickups, powerups, effects, camera, scene, input, raycastWorld, GRAPPLE, katana,
     beginPlay, fireStrap, fireDraco, firePump, firePortal, setWeapon, engagePower, disengagePower, fireGatling, fireMissile, gatling, guns,
-    civic, spawnAndDrive, enterCivic, exitCivic, explodeCivic, allies,
+    civic, spawnAndDrive, enterCivic, exitCivic, explodeCivic, allies, camo, bow, fireBow,
     get state() { return state; }, set state(v) { state = v; },
     get driving() { return driving; },
+    get bowDraw() { return bowDraw; }, set bowDraw(v) { bowDraw = v; },
     get necroCharge() { return necroCharge; }, set necroCharge(v) { necroCharge = v; },
     get weapon() { return weapon; },
     get power() { return power; },

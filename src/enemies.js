@@ -225,14 +225,19 @@ export class Enemies {
 
   // The hostile an enemy fights: the player by default, or a nearby ally if one is
   // closer (the player is slightly preferred so enemies still press toward you).
+  // While you're wearing camo (player.hidden) the player drops off the list entirely —
+  // enemies chase a reanimated ally if there is one, otherwise get no target at all
+  // (null) and wander. A shot briefly reveals you and puts you back on the menu.
   _threat(e, player) {
-    let best = { pos: player.pos, hostile: player, radius: player.hitRadius || PLAYER.radius };
+    const hidden = player.hidden;
+    let best = hidden ? null : { pos: player.pos, hostile: player, radius: player.hitRadius || PLAYER.radius };
     const allies = this.allies;
     if (allies && allies.list.length) {
-      let bd = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) * NECRO.playerBias;
+      // Hidden: an ally at any range beats "no target"; visible: only one closer than you.
+      let bd = hidden ? Infinity : Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z) * NECRO.playerBias;
       for (const a of allies.list) {
         const d = Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z);
-        if (d < bd && d < NECRO.enemyAggroAlly) { bd = d; best = { pos: a.pos, hostile: a, radius: a.radius }; }
+        if (d < bd && (hidden || d < NECRO.enemyAggroAlly)) { bd = d; best = { pos: a.pos, hostile: a, radius: a.radius }; }
       }
     }
     return best;
@@ -398,7 +403,18 @@ export class Enemies {
   }
 
   _updateEnemy(e, dt, player) {
-    const tgt = this._threat(e, player);       // player, or a nearby ally
+    const tgt = this._threat(e, player);       // player, a nearby ally, or null while you're hidden
+    if (!tgt) {
+      // Lost the scent (player cloaked, no ally to chase): drift on a slowly-turning
+      // heading at a crawl. No shooting, no contact damage — you're a ghost.
+      if (e.wander === undefined) e.wander = Math.atan2(e.pos.z, e.pos.x) + Math.PI;
+      e.wander += (Math.random() - 0.5) * dt * 1.5;
+      const wx = Math.cos(e.wander), wz = Math.sin(e.wander);
+      e.pos.x += wx * e.speed * 0.3 * dt;
+      e.pos.z += wz * e.speed * 0.3 * dt;
+      this._settle(e, dt, wx, wz);
+      return;
+    }
     const tp = tgt.pos;
     const dx = tp.x - e.pos.x;
     const dz = tp.z - e.pos.z;
@@ -476,6 +492,37 @@ export class Enemies {
       }
     }
 
+    this._settle(e, dt, nx, nz);
+
+    // Contact damage against the current threat (player or an ally).
+    if (e.contactTimer > 0) e.contactTimer -= dt;
+    if (e.damage > 0) {
+      const h = tgt.hostile, hp = h.pos;
+      const horiz = Math.hypot(hp.x - e.pos.x, hp.z - e.pos.z);
+      const vert = h === player
+        ? (player.pos.y < e.pos.y + e.radius && player.pos.y + PLAYER.height > e.pos.y - e.radius)
+        : Math.abs((hp.y || 0) - e.pos.y) < e.radius + (tgt.radius || 1) + 1.5;
+      if (horiz < (tgt.radius || 0.6) + e.radius && vert && e.contactTimer <= 0) {
+        e.contactTimer = ENEMY.contactInterval;
+        if (h === player && this._guardBlocks(player, e.pos, GUARD.meleeArc)) {
+          // Parried: no damage, shove the attacker back off the blade.
+          const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+          e.pos.x += (dx / d) * 1.4; e.pos.z += (dz / d) * 1.4;
+          this.effects.burst(e.pos.clone(), 0x7cf2ff);
+          sfx.swap();
+        } else {
+          h.takeDamage(e.damage);
+          if (h === player) { sfx.hurt(); this.onPlayerHurt?.(); }
+          else this.effects.burst(e.pos.clone(), e.color);
+        }
+      }
+    }
+  }
+
+  // Shared per-frame tail for an enemy that has already moved this frame: spike-patch
+  // avoidance, arena clamp, terrain/structure follow, and model animation. (nx, nz) is
+  // the enemy's current heading, used only to orient the model.
+  _settle(e, dt, nx, nz) {
     // Steer around active spike patches (enemies don't nominally walk over spikes).
     if (this._hazardZones) {
       for (const z of this._hazardZones) {
@@ -504,30 +551,6 @@ export class Enemies {
     e.pos.y += Math.sign(dy) * Math.min(Math.abs(dy), ENEMY_CLIMB * dt);
     e.group.position.set(e.pos.x, e.pos.y + Math.sin(e.bob * 3) * 0.14, e.pos.z);
     e.animateModel(dt, e, { x: nx, z: nz });
-
-    // Contact damage against the current threat (player or an ally).
-    if (e.contactTimer > 0) e.contactTimer -= dt;
-    if (e.damage > 0) {
-      const h = tgt.hostile, hp = h.pos;
-      const horiz = Math.hypot(hp.x - e.pos.x, hp.z - e.pos.z);
-      const vert = h === player
-        ? (player.pos.y < e.pos.y + e.radius && player.pos.y + PLAYER.height > e.pos.y - e.radius)
-        : Math.abs((hp.y || 0) - e.pos.y) < e.radius + (tgt.radius || 1) + 1.5;
-      if (horiz < (tgt.radius || 0.6) + e.radius && vert && e.contactTimer <= 0) {
-        e.contactTimer = ENEMY.contactInterval;
-        if (h === player && this._guardBlocks(player, e.pos, GUARD.meleeArc)) {
-          // Parried: no damage, shove the attacker back off the blade.
-          const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
-          e.pos.x += (dx / d) * 1.4; e.pos.z += (dz / d) * 1.4;
-          this.effects.burst(e.pos.clone(), 0x7cf2ff);
-          sfx.swap();
-        } else {
-          h.takeDamage(e.damage);
-          if (h === player) { sfx.hurt(); this.onPlayerHurt?.(); }
-          else this.effects.burst(e.pos.clone(), e.color);
-        }
-      }
-    }
   }
 
   // True if the player is guarding and `srcPos` lies within the frontal guard arc.

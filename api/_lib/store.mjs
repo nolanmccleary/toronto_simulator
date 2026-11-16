@@ -39,6 +39,7 @@ async function ensurePg() {
     ts        BIGINT NOT NULL,
     type      TEXT NOT NULL,
     session   TEXT,
+    ip        TEXT,
     username  TEXT,
     is_bot    BOOLEAN DEFAULT FALSE,
     ua        TEXT,
@@ -48,8 +49,11 @@ async function ensurePg() {
     score     INTEGER,
     wave      INTEGER
   )`;
+  // Migrate tables created before the ip column existed.
+  await q`ALTER TABLE events ADD COLUMN IF NOT EXISTS ip TEXT`;
   await q`CREATE INDEX IF NOT EXISTS events_ts_idx ON events(ts)`;
   await q`CREATE INDEX IF NOT EXISTS events_type_idx ON events(type)`;
+  await q`CREATE INDEX IF NOT EXISTS events_ip_idx ON events(ip)`;
   _schemaReady = true;
 }
 
@@ -168,8 +172,8 @@ export async function addEvent(e) {
   if (usePg) {
     await ensurePg();
     const q = await sql();
-    await q`INSERT INTO events (id, ts, type, session, username, is_bot, ua, ref, country, device, score, wave)
-            VALUES (${id}, ${e.ts}, ${e.type}, ${e.session}, ${e.username}, ${e.is_bot}, ${e.ua}, ${e.ref}, ${e.country}, ${e.device}, ${e.score}, ${e.wave})`;
+    await q`INSERT INTO events (id, ts, type, session, ip, username, is_bot, ua, ref, country, device, score, wave)
+            VALUES (${id}, ${e.ts}, ${e.type}, ${e.session}, ${e.ip}, ${e.username}, ${e.is_bot}, ${e.ua}, ${e.ref}, ${e.country}, ${e.device}, ${e.score}, ${e.wave})`;
     return;
   }
   const db = await loadFile();
@@ -194,20 +198,20 @@ async function pgStats(q, since) {
            count(*) FILTER (WHERE human AND played)::int played,
            count(*) FILTER (WHERE human AND finished)::int finished,
            count(*) FILTER (WHERE human AND signed)::int signed
-    FROM (SELECT session, bool_or(NOT is_bot) human, bool_or(type='play_start') played,
+    FROM (SELECT ip, bool_or(NOT is_bot) human, bool_or(type='play_start') played,
                  bool_or(type='game_over') finished, bool_or(type='signup') signed
-          FROM events WHERE ts>=${since} AND session IS NOT NULL GROUP BY session) s`);
+          FROM events WHERE ts>=${since} AND ip IS NOT NULL GROUP BY ip) s`);
   const [pv] = await rows(q`SELECT count(*) FILTER (WHERE NOT is_bot)::int human, count(*) FILTER (WHERE is_bot)::int bot
                             FROM events WHERE type='page_view' AND ts>=${since}`);
   const [games] = await rows(q`SELECT count(*)::int n, round(avg(score))::int avg_score, max(score)::int max_score, round(avg(wave),1) avg_wave
                                FROM events WHERE type='game_over' AND NOT is_bot AND ts>=${since}`);
-  const refs = await rows(q`SELECT coalesce(nullif(ref,''),'(direct)') ref, count(DISTINCT session)::int n
+  const refs = await rows(q`SELECT coalesce(nullif(ref,''),'(direct)') ref, count(DISTINCT ip)::int n
                             FROM events WHERE type='page_view' AND NOT is_bot AND ts>=${since} GROUP BY 1 ORDER BY n DESC LIMIT 8`);
-  const countries = await rows(q`SELECT coalesce(nullif(country,''),'??') country, count(DISTINCT session)::int n
+  const countries = await rows(q`SELECT coalesce(nullif(country,''),'??') country, count(DISTINCT ip)::int n
                                  FROM events WHERE type='page_view' AND NOT is_bot AND ts>=${since} GROUP BY 1 ORDER BY n DESC LIMIT 8`);
-  const devices = await rows(q`SELECT coalesce(device,'?') device, count(DISTINCT session)::int n
+  const devices = await rows(q`SELECT coalesce(device,'?') device, count(DISTINCT ip)::int n
                                FROM events WHERE type='page_view' AND NOT is_bot AND ts>=${since} GROUP BY 1 ORDER BY n DESC`);
-  const topBots = await rows(q`SELECT ua, count(DISTINCT session)::int n FROM events
+  const topBots = await rows(q`SELECT ua, count(DISTINCT ip)::int n FROM events
                                WHERE is_bot AND type='page_view' AND ts>=${since} GROUP BY ua ORDER BY n DESC LIMIT 8`);
   const daily = await rows(q`SELECT (ts/86400000)::int AS "day", count(*) FILTER (WHERE NOT is_bot)::int human, count(*) FILTER (WHERE is_bot)::int bot
                              FROM events WHERE type='page_view' AND ts>=${since} GROUP BY 1 ORDER BY 1`);
@@ -217,17 +221,17 @@ async function pgStats(q, since) {
 
 function fileStats(db, since) {
   const ev = db.events.filter((e) => e.ts >= since);
-  const bySession = new Map();
+  const byIp = new Map();
   for (const e of ev) {
-    if (!e.session) continue;
-    const s = bySession.get(e.session) || { human: false, played: false, finished: false, signed: false };
+    if (!e.ip) continue;
+    const s = byIp.get(e.ip) || { human: false, played: false, finished: false, signed: false };
     if (!e.is_bot) s.human = true;
     if (e.type === 'play_start') s.played = true;
     if (e.type === 'game_over') s.finished = true;
     if (e.type === 'signup') s.signed = true;
-    bySession.set(e.session, s);
+    byIp.set(e.ip, s);
   }
-  const sess = [...bySession.values()];
+  const sess = [...byIp.values()];
   const funnel = {
     human_sessions: sess.filter((s) => s.human).length,
     bot_sessions: sess.filter((s) => !s.human).length,
@@ -239,7 +243,7 @@ function fileStats(db, since) {
   const pv = { human: pvs.filter((e) => !e.is_bot).length, bot: pvs.filter((e) => e.is_bot).length };
   const go = ev.filter((e) => e.type === 'game_over' && !e.is_bot);
   const games = { n: go.length, avg_score: go.length ? Math.round(go.reduce((a, e) => a + (e.score || 0), 0) / go.length) : 0, max_score: go.reduce((m, e) => Math.max(m, e.score || 0), 0), avg_wave: go.length ? (go.reduce((a, e) => a + (e.wave || 0), 0) / go.length).toFixed(1) : 0 };
-  const distinctBy = (arr, key) => { const m = new Map(); for (const e of arr) { const k = e[key] || ''; const set = m.get(k) || new Set(); set.add(e.session); m.set(k, set); } return [...m].map(([k, set]) => ({ k, n: set.size })).sort((a, b) => b.n - a.n); };
+  const distinctBy = (arr, key) => { const m = new Map(); for (const e of arr) { const k = e[key] || ''; const set = m.get(k) || new Set(); set.add(e.ip); m.set(k, set); } return [...m].map(([k, set]) => ({ k, n: set.size })).sort((a, b) => b.n - a.n); };
   const humanPV = pvs.filter((e) => !e.is_bot);
   const refs = distinctBy(humanPV.map((e) => ({ ...e, ref: e.ref || '(direct)' })), 'ref').slice(0, 8).map((x) => ({ ref: x.k, n: x.n }));
   const countries = distinctBy(humanPV.map((e) => ({ ...e, country: e.country || '??' })), 'country').slice(0, 8).map((x) => ({ country: x.k, n: x.n }));
@@ -265,7 +269,9 @@ function shape(funnel, pv, games, refs, countries, devices, topBots, daily, rece
       bounced: (funnel.human_sessions || 0) - (funnel.played || 0),
     },
     games: games || {},
-    referrers: refs, countries, devices, topBots, daily, recent,
+    referrers: refs, countries, devices, topBots, daily,
+    // Postgres returns BIGINT (ts) as a string; coerce so `new Date(ts)` isn't "Invalid Date".
+    recent: (recent || []).map((e) => ({ ...e, ts: Number(e.ts) })),
   };
 }
 

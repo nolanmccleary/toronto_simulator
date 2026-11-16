@@ -171,6 +171,37 @@ export const PULSAR = { interval: 2.8, radius: 6, damage: 22 };
 // Health orbs: spawn/despawn around the arena; walk over one to heal.
 export const PICKUP = { heal: 25, radius: 1.9, interval: 7, intervalVar: 5, maxActive: 3, life: 15, color: 0x5effb0 };
 
+// Camo hat — a stealth power package. Walk over it (or invoke via /console) to drop into
+// STEALTH mode: you cloak, regular enemies lose your trail and stop attacking (the BOSSMAN
+// still sees you), your weapon becomes the Huntsman's Bow, and you ride a 30-HP aux buffer
+// like Night Yute / Somali. Loosing an arrow uncloaks you for a beat, then you fade back.
+export const CAMO = {
+  auxHp: 30,            // same buffer as the power packages (POWER.auxHp)
+  revealTime: 1.4,     // seconds you're visible after a shot, before re-cloaking
+  radius: 1.9,         // walk-over pickup radius
+  interval: 24,        // base seconds between drops...
+  intervalVar: 10,     // ...plus up to this much jitter
+  first: 14,           // first drop appears sooner than a full interval
+  life: 16,            // how long a drop lingers on the ground
+  color: 0x5fc24a,     // camo green (pickup beacon / glow)
+};
+
+// Huntsman's Bow — the Stealth-mode weapon. Hold to draw (damage scales with the draw),
+// release to loose a hitscan arrow; a full draw pierces the line. Any shot can crit for a
+// 2x multiplier. The shot is what gives you away.
+export const BOW = {
+  range: 220,
+  minDamage: 24,       // snap shot (barely drawn) — weak, so the draw is worth holding
+  maxDamage: 150,      // full draw — one-shots most light enemies, pierces the line
+  drawTime: 0.55,      // seconds from nock to full draw
+  minDraw: 0.2,        // below this a release just dry-fires (no arrow)
+  critChance: 0.2,     // chance any arrow crits, regardless of draw
+  critMult: 2,         // crit damage multiplier (on top of the drawn base)
+  aimFov: 52,          // right-click steadies the draw with a modest zoom (base is 80)
+  color: 0xcfe08a,     // pale fletching green
+  critColor: 0xfff0a0, // gold flash on a crit
+};
+
 // Power modes: Somali Samurai (sabre) and XM-01 Night Yute (Gat + missiles + jetpack).
 // Both grant 30 auxiliary HP when picked up as a package; invoked from the /console they're infinite.
 export const POWER = {

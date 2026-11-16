@@ -424,10 +424,13 @@ export class World {
       for (const p of placed) if (Math.hypot(x - p.x, z - p.z) < p.r + r + 2.5) return false;
       return true;
     };
-    const bound = this.half - 6;
+    // Place a feature so its WHOLE footprint stays inside the wall: the centre is bounded by
+    // the arena half minus the structure's own radius. `approxR` is that radius (a safe max
+    // per builder — e.g. a bridge reaches span/2≈16, a staircase ~16 in its run direction).
     const feature = (builder, approxR) => {
+      const lim = Math.max(4, this.half - approxR - 1.5);
       for (let i = 0; i < 30; i++) {
-        const x = rand(-bound, bound), z = rand(-bound, bound);
+        const x = rand(-lim, lim), z = rand(-lim, lim);
         if (clear(x, z, approxR)) {
           this._beginStructure();
           const r = builder(x, z);
@@ -437,13 +440,14 @@ export class World {
       }
     };
 
-    // Big central features from the richer set (~2x density).
-    const bigs = [this._platform, this._tower, this._ziggurat, this._bridge, this._arch];
-    for (let i = 0, n = randi(3, 4); i < n; i++) feature(pick(bigs).bind(this), 10);
+    // Big central features from the richer set (~2x density). Each pairs its builder with the
+    // max radius of its footprint so edge placements can't clip through the boundary wall.
+    const bigs = [[this._platform, 11], [this._tower, 9], [this._ziggurat, 12], [this._bridge, 16], [this._arch, 11]];
+    for (let i = 0, n = randi(3, 4); i < n; i++) { const [b, r] = pick(bigs); feature(b.bind(this), r); }
 
     // Medium pieces.
-    const mids = [this._platform, this._arch, this._bridge, this._pillarField];
-    for (let i = 0, n = randi(2, 4); i < n; i++) feature(pick(mids).bind(this), 8);
+    const mids = [[this._platform, 11], [this._arch, 11], [this._bridge, 16], [this._pillarField, 12]];
+    for (let i = 0, n = randi(2, 4); i < n; i++) { const [b, r] = pick(mids); feature(b.bind(this), r); }
 
     // Pillars + scattered cover — lots of it, for parkour.
     for (let i = 0, n = randi(4, 6); i < n; i++) feature(this._pillar.bind(this), 2.2);
@@ -451,7 +455,7 @@ export class World {
 
     // Low, jumpable geometry — stepping stones and staircases that link the ground up.
     for (let i = 0, n = randi(7, 11); i < n; i++) feature(this._lowBlock.bind(this), 3);
-    for (let i = 0, n = randi(2, 3); i < n; i++) feature(this._steps.bind(this), 6);
+    for (let i = 0, n = randi(2, 3); i < n; i++) feature(this._steps.bind(this), 16);
 
     if (this.targets.length === 0) this.targets.push({ x: 0, y: 4, z: 0 });
 

@@ -279,6 +279,42 @@ kbd {
 #seered.civic { background: radial-gradient(ellipse at center, transparent 52%, rgba(210, 30, 20, 0.03) 74%, rgba(220, 30, 20, 0.16) 100%); animation: none; opacity: 0.8; }
 @keyframes seered-pulse { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
 
+/* ---------- Stealth (camo / Huntsman's Bow) ---------- */
+#stealth {
+  display: none; position: absolute; inset: 0; z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(80, 150, 110, 0.10) 70%, rgba(40, 90, 70, 0.42) 100%);
+  animation: stealth-breathe 2.4s ease-in-out infinite;
+}
+#stealth.on { display: block; }
+/* Spotted (just loosed an arrow): the cloak glow simply drops away, with only a faint amber
+   hint at the far corners. Kept subtle on purpose — a bright flash here is disorienting. */
+#stealth.exposed {
+  background: radial-gradient(ellipse at center, transparent 72%, rgba(255, 150, 60, 0.10) 100%);
+  animation: none;
+}
+#stealth-tag {
+  position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 3px; font-weight: 700;
+  color: #bfe08a; text-shadow: 0 0 12px rgba(150, 200, 90, 0.6);
+  padding: 3px 12px; border: 1px solid rgba(150, 200, 90, 0.4); border-radius: 20px;
+  background: rgba(20, 30, 14, 0.35); white-space: nowrap;
+}
+#stealth.exposed #stealth-tag {
+  color: #ffc25a; border-color: rgba(255, 170, 60, 0.5); text-shadow: 0 0 12px rgba(255, 170, 60, 0.6);
+}
+@keyframes stealth-breathe { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.9; } }
+
+/* Bow draw/charge meter — a thin bar just under the crosshair. */
+#draw {
+  display: none; position: absolute; top: calc(50% + 26px); left: 50%; transform: translateX(-50%);
+  width: 108px; height: 5px; z-index: 4;
+  background: rgba(10, 16, 8, 0.55); border: 1px solid rgba(150, 200, 90, 0.35); border-radius: 4px; overflow: hidden;
+}
+#draw-fill { height: 100%; width: 0; background: #8fb04a; border-radius: 4px; transition: width 0.04s linear; }
+/* Fully drawn: bar glows pale and ready. */
+#draw.full { border-color: rgba(220, 245, 170, 0.9); box-shadow: 0 0 10px rgba(190, 230, 120, 0.6); }
+#draw.full #draw-fill { background: #e8f6c0; }
+
 /* ---------- Fighter-jet HUD (Pressa/Drizzy) ---------- */
 #jethud {
   display: none; position: absolute; inset: 0; z-index: 3;

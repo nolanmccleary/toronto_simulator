@@ -45,6 +45,10 @@ export class HUD {
     this.necroFill = this.$('necro-fill');
     this.necroCount = this.$('necro-count');
     this.prompt = this.$('prompt');
+    this.stealth = this.$('stealth');
+    this.stealthTag = this.$('stealth-tag');
+    this.draw = this.$('draw');
+    this.drawFill = this.$('draw-fill');
     this.consoleEl = this.$('console');
     this.consoleInput = this.$('console-input');
     this.hpPct = this.$('hp-pct');
@@ -94,29 +98,50 @@ export class HUD {
     this.powerFill.style.width = (inf ? 1 : Math.max(0, Math.min(1, aux / auxMax))) * 100 + '%';
     // Night Yute's name is already shown in the jet status line — don't repeat it here.
     const aux_s = 'AUX ' + (inf ? '∞' : Math.ceil(aux));
-    this.powerLabel.textContent = power === 'somali' ? 'SOMALI SAMURAI · ' + aux_s : aux_s;
+    this.powerLabel.textContent = power === 'somali' ? 'SOMALI SAMURAI · ' + aux_s
+      : power === 'camo' ? 'STEALTH · ' + aux_s : aux_s;
     this.fuelWrap.style.display = fuelFrac >= 0 ? 'block' : 'none';
     if (fuelFrac >= 0) this.fuelFill.style.width = Math.max(0, Math.min(1, fuelFrac)) * 100 + '%';
   }
 
   setPowerMode(kind) {
-    // kind: null | 'somali' | 'nightyute' | 'necro'
+    // kind: null | 'somali' | 'nightyute' | 'necro' | 'camo'
     const night = kind === 'nightyute';
     const necro = kind === 'necro';
+    const camo = kind === 'camo';
     this.seered.style.display = kind === 'somali' ? 'block' : 'none'; // only Somali Samurai sees red
     this.jethud.style.display = night ? 'block' : 'none';  // only Night Yute keeps the jet HUD
     this.targets.style.display = night ? 'block' : 'none';
     this.somaliText.style.display = kind === 'somali' ? 'flex' : 'none';
     if (kind) {
-      this.weaponName.textContent = night ? 'XM-01 NIGHT YUTE' : necro ? 'SHAWARMA KNIFE' : 'SAUGA SABRE';
+      this.weaponName.textContent = night ? 'XM-01 NIGHT YUTE' : necro ? 'SHAWARMA KNIFE' : camo ? "HUNTSMAN'S BOW" : 'SAUGA SABRE';
       this.portalDots.style.display = 'none';
-      this.crosshair.style.display = necro ? 'block' : 'none'; // necro aims the hex
+      this.crosshair.style.display = (necro || camo) ? 'block' : 'none'; // necro aims the hex; camo aims the bow
       if (night) this.jetStatus.textContent = '● NIGHT YUTE · GAT + MISSILES';
     } else {
       this.updateTargets([]);
       this.lock.style.display = 'none';
     }
     if (!necro) this.setNecro(false);
+    if (!camo) { this.setStealth(false); this.setDraw(false); }
+  }
+
+  // Stealth (camo) cloak overlay + GHOST/EXPOSED readout. active = in camo mode;
+  // hidden = currently unseen (vs the brief post-shot reveal window).
+  setStealth(active, hidden = false) {
+    if (!this.stealth) return;
+    this.stealth.classList.toggle('on', !!active);
+    this.stealth.classList.toggle('exposed', !!active && !hidden);
+    if (active) this.stealthTag.textContent = hidden ? '◇ GHOST' : '◇ EXPOSED';
+  }
+
+  // Huntsman's Bow draw meter: frac is the current draw (0..1), full flags a max draw.
+  setDraw(active, frac = 0, full = false) {
+    if (!this.draw) return;
+    this.draw.style.display = active ? 'block' : 'none';
+    if (!active) return;
+    this.drawFill.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+    this.draw.classList.toggle('full', !!full);
   }
 
   // neCROmancer summon bar: charge (green when full), or the hold-E cast (purple).

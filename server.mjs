@@ -30,6 +30,7 @@ async function handleApi(req, res, pathname, query) {
       method: req.method, body, query,
       cookieHeader: req.headers.cookie || '',
       headers: req.headers || {},
+      ip: req.socket?.remoteAddress || '',
     });
     sendJson(res, result);
   } catch (e) {

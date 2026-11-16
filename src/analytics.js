@@ -4,8 +4,9 @@
 // from, and a couple of gameplay numbers. No cookies beyond the existing auth session,
 // no third parties, no personal data.
 
-// One id per browser tab session = one "visitor". sessionStorage clears when the tab
-// closes, so reloads in the same tab stay one visitor but a fresh visit is a new one.
+// A per-tab id, kept only as a secondary signal to group events within a tab. Visitor
+// uniqueness is decided server-side by IP address, so reloads and extra tabs from the
+// same address count as one visitor regardless of this id.
 function sessionId() {
   try {
     let id = sessionStorage.getItem('ts_sid');

@@ -74,11 +74,21 @@ function refHost(raw) {
   catch { return String(raw).slice(0, 120); }
 }
 
+// The caller's IP — the uniqueness key for "one visitor" (so reloads and extra tabs from
+// the same address count once). Behind Vercel the real client IP is the first entry of
+// x-forwarded-for; locally we fall back to the socket address. IPv6-mapped IPv4
+// (::ffff:1.2.3.4) is normalized to the bare v4 form.
+function clientIp(headers = {}, ip = '') {
+  const xff = String(headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const raw = xff || String(headers['x-real-ip'] || '').trim() || String(ip || '').trim();
+  return raw.replace(/^::ffff:/, '').slice(0, 64) || null;
+}
+
 // Record one analytics event. The client supplies the event type + a session id + a few
 // gameplay fields; everything trust-sensitive (bot flag, UA, country, timestamp, who's
 // logged in) is derived here on the server. Never errors the client — analytics must not
 // break the game, so failures are swallowed and reported as ok.
-export async function handleEvent({ method, body, cookieHeader, headers = {} }) {
+export async function handleEvent({ method, body, cookieHeader, headers = {}, ip = '' }) {
   if (method !== 'POST') return bad('method not allowed', 405);
   const type = String(body?.type ?? '');
   if (!EVENT_TYPES.has(type)) return ok({ ok: false });   // ignore unknown types silently
@@ -92,6 +102,7 @@ export async function handleEvent({ method, body, cookieHeader, headers = {} }) 
     ts: Date.now(),
     type,
     session: String(body?.session ?? '').slice(0, 64) || null,
+    ip: clientIp(headers, ip),
     username,
     is_bot: classifyUA(ua),
     ua,
